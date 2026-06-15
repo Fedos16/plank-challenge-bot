@@ -71,7 +71,6 @@ export async function getParticipationStreaks(
   const tz = challenge.timezone;
   const startDay = dateToDay(challenge.startDate);
   const joinedDay = challengeDay(participation.joinedAt, tz);
-  const fromDay = joinedDay > startDay ? joinedDay : startDay;
   const today = todayDay(tz);
 
   const submissions = await prisma.submission.findMany({
@@ -85,6 +84,12 @@ export async function getParticipationStreaks(
 
   const doneDays = new Set(submissions.map((s) => dateToDay(s.day)));
   const sickDays = new Set(sick.map((s) => dateToDay(s.day)));
+
+  // обычно считаем с момента вступления/старта; но если есть более ранняя реальная
+  // активность (бэкфилл истории), расширяем начало назад, чтобы серия её учла
+  let fromDay = joinedDay > startDay ? joinedDay : startDay;
+  for (const d of doneDays) if (d < fromDay) fromDay = d;
+  for (const d of sickDays) if (d < fromDay) fromDay = d;
 
   return computeStreaks(doneDays, sickDays, fromDay, today, challenge.freezeStreakOnSick, today);
 }
