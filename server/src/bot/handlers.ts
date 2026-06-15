@@ -150,11 +150,20 @@ export function registerHandlers(): void {
     await ctx.reply(
       `✅ Чат привязан к челленджу «${challenge.title}». Кружки отсюда теперь засчитываются.`,
     );
-    // публикуем красивые правила + кнопку открытия приложения
-    await ctx.reply(formatRulesMessageHtml(challenge), {
+    // публикуем красивые правила + кнопку открытия приложения и закрепляем их
+    const rulesMsg = await ctx.reply(formatRulesMessageHtml(challenge), {
       parse_mode: 'HTML',
       reply_markup: appLaunchKeyboard(ctx.me.username),
     });
+    try {
+      await ctx.api.pinChatMessage(ctx.chat.id, rulesMsg.message_id, {
+        disable_notification: true,
+      });
+    } catch {
+      await ctx.reply(
+        '⚠️ Правила опубликованы, но закрепить не вышло — дайте боту право «Закреплять сообщения» в группе и выполните /bindchat снова.',
+      );
+    }
   });
 
   // /sick — сообщить о болезни на сегодня
