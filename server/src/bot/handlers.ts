@@ -33,6 +33,13 @@ function fromTelegramId(ctx: Context): bigint | null {
 export function registerHandlers(): void {
   if (!bot) return; // бот выключен (нет BOT_TOKEN)
 
+  // Глобальный обработчик ошибок: ловим исключения хэндлеров, чтобы webhook возвращал 200
+  // (иначе Telegram копит и ретраит апдейты), и логируем причину.
+  bot.catch((err) => {
+    const updateId = err.ctx?.update?.update_id;
+    console.error(`[bot] ошибка при обработке апдейта ${updateId}:`, err.error);
+  });
+
   // /start — регистрация и кнопка открытия Web App
   bot.command('start', async (ctx) => {
     if (!ctx.from) return;
@@ -63,7 +70,10 @@ export function registerHandlers(): void {
       'Открой приложение, чтобы видеть свой профиль, серию и статистику 👇',
     ].join('\n');
 
-    await ctx.reply(text, { reply_markup: startKeyboard(), parse_mode: 'HTML' });
+    // web_app-кнопки разрешены только в личке; в группе используем url-кнопку запуска
+    const keyboard =
+      ctx.chat?.type === 'private' ? startKeyboard() : appLaunchKeyboard(ctx.me.username);
+    await ctx.reply(text, { reply_markup: keyboard, parse_mode: 'HTML' });
   });
 
   // /id — прислать пользователю его Telegram ID (для ADMIN_TELEGRAM_IDS / VITE_DEV_TELEGRAM_ID)
