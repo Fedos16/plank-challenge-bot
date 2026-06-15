@@ -18,7 +18,8 @@ model User {
   isAdmin    Boolean  @default(false)
   createdAt  DateTime @default(now())
 
-  participations Participation[]
+  participations     Participation[]
+  personalChallenges PersonalChallenge[]
 }
 
 // Челлендж (например «Планка каждый день»). Все настройки редактируются в админке.
@@ -128,6 +129,32 @@ model MotivationalQuote {
   createdAt   DateTime  @default(now())
 
   challenge Challenge? @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+}
+
+// Личный челлендж пользователя (например подтягивания/отжимания), только для себя
+model PersonalChallenge {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  unit      String   @default("повторений")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sets WorkoutSet[]
+}
+
+// Один подход в личном челлендже (день + число повторений)
+model WorkoutSet {
+  id                  Int      @id @default(autoincrement())
+  personalChallengeId Int
+  day                 DateTime @db.Date
+  reps                Int
+  createdAt           DateTime @default(now())
+
+  challenge PersonalChallenge @relation(fields: [personalChallengeId], references: [id], onDelete: Cascade)
+
+  @@index([personalChallengeId, day])
 }
 
 // Лог отправленных дневных отчётов (идемпотентность)

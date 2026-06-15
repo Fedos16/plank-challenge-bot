@@ -7,6 +7,8 @@ import type {
   LedgerEntry,
   MyChallengesResponse,
   Participant,
+  PersonalDetail,
+  PersonalSummary,
   Profile,
   Quote,
   SickResult,
@@ -43,6 +45,18 @@ export const api = {
   getMe: (id: number) => request<Profile>(`/challenges/${id}/me`),
   getLeaderboard: (id: number) => request<{ rows: LeaderboardRow[] }>(`/challenges/${id}/leaderboard`),
   reportSick: (id: number) => request<SickResult>(`/challenges/${id}/sick`, { method: 'POST' }),
+
+  // --- личные челленджи ---
+  getPersonal: () => request<{ challenges: PersonalSummary[] }>('/personal'),
+  createPersonal: (title: string) =>
+    request<{ id: number }>('/personal', { method: 'POST', body: JSON.stringify({ title }) }),
+  getPersonalDetail: (id: number) => request<PersonalDetail>(`/personal/${id}`),
+  addSet: (id: number, reps: number) =>
+    request<{ ok: boolean }>(`/personal/${id}/sets`, { method: 'POST', body: JSON.stringify({ reps }) }),
+  deleteSet: (id: number, setId: number) =>
+    request<{ ok: boolean }>(`/personal/${id}/sets/${setId}`, { method: 'DELETE' }),
+  deletePersonal: (id: number) =>
+    request<{ ok: boolean }>(`/personal/${id}`, { method: 'DELETE' }),
 
   // --- админские ---
   adminGetChallenge: () => request<AdminChallenge>('/admin/challenge'),

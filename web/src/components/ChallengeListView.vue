@@ -1,19 +1,34 @@
 <script setup lang="ts">
-import type { MyChallenge } from '../types';
+import { ref } from 'vue';
+import type { MyChallenge, PersonalSummary } from '../types';
 import { STATE_LABEL, formatMoney } from '../helpers';
 
-defineProps<{ challenges: MyChallenge[]; userName: string }>();
-defineEmits<{ (e: 'select', id: number): void }>();
+defineProps<{ group: MyChallenge[]; personal: PersonalSummary[]; userName: string }>();
+const emit = defineEmits<{
+  (e: 'open-group', id: number): void;
+  (e: 'open-personal', id: number): void;
+  (e: 'create', title: string): void;
+}>();
+
+const newTitle = ref('');
+function create() {
+  const t = newTitle.value.trim();
+  if (!t) return;
+  emit('create', t);
+  newTitle.value = '';
+}
 </script>
 
 <template>
   <div>
     <h2 style="margin: 4px 0 14px">Мои челленджи</h2>
+
+    <!-- Групповые -->
     <div
-      v-for="c in challenges"
-      :key="c.id"
+      v-for="c in group"
+      :key="'g' + c.id"
       class="card challenge-card"
-      @click="$emit('select', c.id)"
+      @click="$emit('open-group', c.id)"
     >
       <div class="challenge-card-head">
         <div class="challenge-title">{{ c.title }}</div>
@@ -26,6 +41,40 @@ defineEmits<{ (e: 'select', id: number): void }>();
         <span>💰 {{ formatMoney(c.bank) }}</span>
         <span class="chev">›</span>
       </div>
+    </div>
+
+    <!-- Личные -->
+    <h3 v-if="personal.length" style="margin: 18px 0 8px">Личные</h3>
+    <div
+      v-for="c in personal"
+      :key="'p' + c.id"
+      class="card challenge-card"
+      @click="$emit('open-personal', c.id)"
+    >
+      <div class="challenge-card-head">
+        <div class="challenge-title">💪 {{ c.title }}</div>
+        <span class="fire">🔥 {{ c.currentStreak }}</span>
+      </div>
+      <div class="challenge-card-meta">
+        <span>сегодня: {{ c.todayReps }} ({{ c.todaySets }} подх.)</span>
+        <span>всего: {{ c.totalReps }} {{ c.unit }}</span>
+        <span class="chev">›</span>
+      </div>
+    </div>
+
+    <!-- Создать личный -->
+    <div class="card">
+      <h3>➕ Новый личный челлендж</h3>
+      <div class="muted">
+        Например: Подтягивания, Отжимания. Логируешь подходы и повторения — только для себя.
+      </div>
+      <input
+        v-model="newTitle"
+        placeholder="Название упражнения"
+        style="margin-top: 10px"
+        @keyup.enter="create"
+      />
+      <button class="btn" style="margin-top: 8px" @click="create">Создать</button>
     </div>
   </div>
 </template>

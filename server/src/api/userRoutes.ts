@@ -5,6 +5,14 @@ import { getBank } from '../services/bank';
 import { getProfile } from '../services/profile';
 import { getLeaderboard } from '../services/leaderboard';
 import { getMyChallenges } from '../services/myChallenges';
+import {
+  addSet,
+  createPersonalChallenge,
+  deletePersonal,
+  deleteSet,
+  getPersonalDetail,
+  listPersonal,
+} from '../services/personal';
 import { getChallengeById } from '../services/challenge';
 import { getActiveParticipation, displayName } from '../services/users';
 import { reportSick } from '../services/sick';
@@ -106,6 +114,52 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       day: result.day,
       sickDeadline: r.challenge.sickDeadline,
     };
+  });
+
+  // ---- Личные челленджи (только владелец) ----
+  app.get('/personal', async (req) => {
+    return { challenges: await listPersonal(req.ctx!.user.id) };
+  });
+
+  app.post('/personal', async (req, reply) => {
+    const body = (req.body ?? {}) as { title?: string; unit?: string };
+    if (!body.title || !body.title.trim()) return reply.code(400).send({ error: 'empty_title' });
+    const c = await createPersonalChallenge(req.ctx!.user.id, body.title, body.unit);
+    return { id: c.id };
+  });
+
+  app.get('/personal/:id', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const detail = await getPersonalDetail(id, req.ctx!.user.id);
+    if (!detail) return reply.code(404).send({ error: 'not_found' });
+    return detail;
+  });
+
+  app.post('/personal/:id/sets', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const body = (req.body ?? {}) as { reps?: number };
+    const reps = Math.trunc(Number(body.reps));
+    if (!Number.isInteger(reps) || reps <= 0 || reps > 100000) {
+      return reply.code(400).send({ error: 'bad_reps' });
+    }
+    const ok = await addSet(id, req.ctx!.user.id, reps);
+    if (!ok) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
+  });
+
+  app.delete('/personal/:id/sets/:setId', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const setId = Number((req.params as { setId: string }).setId);
+    const ok = await deleteSet(id, req.ctx!.user.id, setId);
+    if (!ok) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
+  });
+
+  app.delete('/personal/:id', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const ok = await deletePersonal(id, req.ctx!.user.id);
+    if (!ok) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
   });
 
   // ---- Совместимость: активный челлендж (одиночный режим) ----

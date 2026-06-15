@@ -39,6 +39,26 @@ export interface SickResult {
   sickDeadline: string;
 }
 
+export interface PersonalSummary {
+  id: number;
+  title: string;
+  unit: string;
+  todayReps: number;
+  todaySets: number;
+  currentStreak: number;
+  totalReps: number;
+}
+
+export interface PersonalDetail {
+  id: number;
+  title: string;
+  unit: string;
+  today: { day: string; totalReps: number; sets: { id: number; reps: number }[] };
+  streak: number;
+  totals: { totalReps: number; totalSets: number; daysActive: number; bestDayReps: number };
+  history: { day: string; totalReps: number; setCount: number }[];
+}
+
 export interface Profile {
   user: { name: string; username: string | null; photoUrl: string | null };
   isAdmin: boolean;
