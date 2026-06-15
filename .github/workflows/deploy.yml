@@ -11,16 +11,9 @@ concurrency:
 
 jobs:
   deploy:
-    # self-hosted раннер развёрнут прямо на сервере (challenge-vps), поэтому
-    # деплоим локально, без SSH. Не зависит от GitHub-hosted минут.
+    # self-hosted раннер развёрнут прямо на сервере (challenge-vps): деплой локально, без SSH,
+    # не зависит от GitHub-hosted минут. Скрипт берёт flock — общий с systemd-таймером.
     runs-on: [self-hosted, linux, x64]
     steps:
       - name: Pull latest and redeploy
-        run: |
-          set -e
-          cd /opt/challenge
-          git fetch --quiet origin main
-          git reset --hard origin/main
-          docker compose up -d --build
-          docker image prune -f
-          docker compose ps
+        run: /usr/local/bin/challenge-deploy.sh
