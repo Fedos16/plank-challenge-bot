@@ -5,9 +5,11 @@ import type {
   DayStatusRow,
   LeaderboardRow,
   LedgerEntry,
+  MyChallengesResponse,
   Participant,
   Profile,
   Quote,
+  SickResult,
 } from './types';
 
 const DEV_ID = import.meta.env.VITE_DEV_TELEGRAM_ID as string | undefined;
@@ -32,10 +34,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  // --- пользовательские ---
-  getChallenge: () => request<ChallengePublic>('/challenge'),
-  getMe: () => request<Profile>('/me'),
-  getLeaderboard: () => request<{ rows: LeaderboardRow[] }>('/leaderboard'),
+  // --- пользовательские (мультичеллендж) ---
+  getMyChallenges: () => request<MyChallengesResponse>('/my/challenges'),
+  getChallenge: (id: number) => request<ChallengePublic>(`/challenges/${id}`),
+  getMe: (id: number) => request<Profile>(`/challenges/${id}/me`),
+  getLeaderboard: (id: number) => request<{ rows: LeaderboardRow[] }>(`/challenges/${id}/leaderboard`),
+  reportSick: (id: number) => request<SickResult>(`/challenges/${id}/sick`, { method: 'POST' }),
 
   // --- админские ---
   adminGetChallenge: () => request<AdminChallenge>('/admin/challenge'),

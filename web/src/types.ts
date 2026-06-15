@@ -16,6 +16,29 @@ export interface ChallengePublic {
 
 export type DayState = 'done' | 'late' | 'fake' | 'rejected' | 'sick' | 'missed' | 'pending';
 
+export interface MyChallenge {
+  id: number;
+  key: string;
+  title: string;
+  description: string;
+  dayNumber: number;
+  todayState: DayState;
+  currentStreak: number;
+  bank: number;
+}
+
+export interface MyChallengesResponse {
+  user: { name: string; username: string | null; photoUrl: string | null; isAdmin: boolean };
+  challenges: MyChallenge[];
+}
+
+export interface SickResult {
+  ok: boolean;
+  valid: boolean;
+  day: string;
+  sickDeadline: string;
+}
+
 export interface Profile {
   user: { name: string; username: string | null; photoUrl: string | null };
   isAdmin: boolean;

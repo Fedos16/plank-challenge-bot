@@ -1,23 +1,27 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { api } from '../api';
 import type { ChallengePublic, LeaderboardRow } from '../types';
 import { formatMoney } from '../helpers';
 
-defineProps<{ challenge: ChallengePublic }>();
+const props = defineProps<{ challengeId: number; challenge: ChallengePublic }>();
 
 const rows = ref<LeaderboardRow[]>([]);
 const loading = ref(true);
 const medals = ['🥇', '🥈', '🥉'];
 
-onMounted(async () => {
+async function load() {
+  loading.value = true;
   try {
-    const res = await api.getLeaderboard();
+    const res = await api.getLeaderboard(props.challengeId);
     rows.value = res.rows;
   } finally {
     loading.value = false;
   }
-});
+}
+
+onMounted(load);
+watch(() => props.challengeId, load);
 </script>
 
 <template>

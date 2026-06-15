@@ -74,6 +74,18 @@ export async function ensureParticipation(
   return prisma.participation.create({ data: { challengeId, userId } });
 }
 
+/** Активное участие пользователя в челлендже по userId (или null) */
+export async function getActiveParticipation(
+  challengeId: number,
+  userId: number,
+): Promise<Participation | null> {
+  const p = await prisma.participation.findUnique({
+    where: { challengeId_userId: { challengeId, userId } },
+  });
+  if (!p || p.status !== 'active') return null;
+  return p;
+}
+
 /** Активное участие пользователя по telegramId (или null) */
 export async function getParticipationByTelegramId(
   challengeId: number,
