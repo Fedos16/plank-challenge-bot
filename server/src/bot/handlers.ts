@@ -18,7 +18,7 @@ import {
   recordVideoNote,
 } from '../services/submissions';
 import { reportSick } from '../services/sick';
-import { sendDailyReport, escapeHtml } from '../services/report';
+import { sendDailyReport, escapeHtml, formatRulesMessageHtml } from '../services/report';
 
 async function isAdminTg(telegramId: bigint): Promise<boolean> {
   if (config.adminTelegramIds.some((id) => id === telegramId)) return true;
@@ -114,14 +114,17 @@ export function registerHandlers(): void {
     }
   });
 
-  // /rules — правила челленджа
+  // /rules — правила челленджа (красивое оформление + кнопка приложения)
   bot.command('rules', async (ctx) => {
     const challenge = await getActiveChallenge();
     if (!challenge) {
       await ctx.reply('Нет активного челленджа.');
       return;
     }
-    await ctx.reply(challenge.rulesText || 'Правила не заданы.');
+    await ctx.reply(formatRulesMessageHtml(challenge), {
+      parse_mode: 'HTML',
+      reply_markup: appLaunchKeyboard(ctx.me.username),
+    });
   });
 
   // /chatid — узнать id текущего чата (для настройки мониторинга), только админ
@@ -144,7 +147,14 @@ export function registerHandlers(): void {
       where: { id: challenge.id },
       data: { chatId: BigInt(ctx.chat.id) },
     });
-    await ctx.reply(`✅ Этот чат привязан к челленджу «${challenge.title}». Кружки отсюда теперь засчитываются.`);
+    await ctx.reply(
+      `✅ Чат привязан к челленджу «${challenge.title}». Кружки отсюда теперь засчитываются.`,
+    );
+    // публикуем красивые правила + кнопку открытия приложения
+    await ctx.reply(formatRulesMessageHtml(challenge), {
+      parse_mode: 'HTML',
+      reply_markup: appLaunchKeyboard(ctx.me.username),
+    });
   });
 
   // /sick — сообщить о болезни на сегодня

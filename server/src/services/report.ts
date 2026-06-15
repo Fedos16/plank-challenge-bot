@@ -107,6 +107,36 @@ export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** Красиво оформленное HTML-сообщение с правилами челленджа (для публикации в чат). */
+export function formatRulesMessageHtml(challenge: Challenge): string {
+  const rawLines = challenge.rulesText.split('\n');
+  let body = challenge.rulesText.trim();
+  // убираем строку-заголовок вида "Правила ..." — свой заголовок добавим ниже
+  if (rawLines[0] && /^\s*правила/i.test(rawLines[0])) {
+    body = rawLines.slice(1).join('\n').trim();
+  }
+
+  const fakeFine = challenge.fineAmount * challenge.fakeFineMultiplier;
+  const lines: string[] = [];
+  lines.push(`🏆 <b>${escapeHtml(challenge.title)}</b>`);
+  if (challenge.description) lines.push(`<i>${escapeHtml(challenge.description)}</i>`);
+  lines.push('');
+  lines.push('📋 <b>Правила</b>');
+  lines.push(`<blockquote>${escapeHtml(body)}</blockquote>`);
+  lines.push('');
+  lines.push(
+    `⏱ Минимум <b>${challenge.minDurationSec} сек</b>  ·  кружок до <b>${escapeHtml(
+      challenge.dailyDeadline,
+    )}</b>  ·  о болезни до <b>${escapeHtml(challenge.sickDeadline)}</b>`,
+  );
+  lines.push(
+    `💸 Пропуск — <b>${challenge.fineAmount.toLocaleString('ru-RU')} ₽</b>, обман (×${challenge.fakeFineMultiplier}) — <b>${fakeFine.toLocaleString('ru-RU')} ₽</b>`,
+  );
+  lines.push('');
+  lines.push('Жми кнопку ниже — профиль, серия и рейтинг 👇');
+  return lines.join('\n');
+}
+
 export interface SendReportResult {
   sent: boolean;
   skipped: boolean;
