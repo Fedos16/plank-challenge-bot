@@ -52,6 +52,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (typeof body.freezeStreakOnSick === 'boolean') data.freezeStreakOnSick = body.freezeStreakOnSick;
+    if (typeof body.dmReminders === 'boolean') data.dmReminders = body.dmReminders;
     if (typeof body.isActive === 'boolean') data.isActive = body.isActive;
 
     if (typeof body.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.startDate)) {
@@ -308,6 +309,7 @@ function serializeChallenge(ch: import('@prisma/client').Challenge) {
     fakeFineMultiplier: ch.fakeFineMultiplier,
     chatId: ch.chatId ? ch.chatId.toString() : null,
     freezeStreakOnSick: ch.freezeStreakOnSick,
+    dmReminders: ch.dmReminders,
     reportTime: ch.reportTime,
     reminderTime: ch.reminderTime,
   };

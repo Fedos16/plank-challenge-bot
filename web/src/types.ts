@@ -74,6 +74,7 @@ export interface AdminChallenge {
   fakeFineMultiplier: number;
   chatId: string | null;
   freezeStreakOnSick: boolean;
+  dmReminders: boolean;
   reportTime: string;
   reminderTime: string;
   bank?: number;

@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { dayjs, yesterdayDay } from '../lib/time';
 import { getActiveChallenge } from '../services/challenge';
 import { sendDailyReport } from '../services/report';
-import { sendDailyReminder } from '../services/reminders';
+import { sendDailyReminder, sendPersonalReminders } from '../services/reminders';
 
 /**
  * Тик каждую минуту: сверяем текущее время (в TZ челленджа) с reportTime/reminderTime.
@@ -24,7 +24,11 @@ export function startScheduler(): void {
 
       if (hhmm === challenge.reminderTime) {
         const sent = await sendDailyReminder(challenge);
-        if (sent) console.log('[scheduler] Напоминание отправлено');
+        if (sent) console.log('[scheduler] Напоминание в чат отправлено');
+        if (challenge.dmReminders) {
+          const dm = await sendPersonalReminders(challenge);
+          if (dm) console.log(`[scheduler] Личных напоминаний в ЛС: ${dm}`);
+        }
       }
     } catch (err) {
       console.error('[scheduler] Ошибка:', err);

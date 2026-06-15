@@ -247,6 +247,10 @@ onMounted(loadSettings);
         <span class="lbl" style="margin: 0">Больничный замораживает серию</span>
       </label>
       <label class="field" style="display: flex; align-items: center; gap: 10px">
+        <input type="checkbox" style="width: auto" v-model="settings.dmReminders" />
+        <span class="lbl" style="margin: 0">Личные напоминания в ЛС (помимо чата)</span>
+      </label>
+      <label class="field" style="display: flex; align-items: center; gap: 10px">
         <input type="checkbox" style="width: auto" v-model="settings.isActive" />
         <span class="lbl" style="margin: 0">Челлендж активен</span>
       </label>
