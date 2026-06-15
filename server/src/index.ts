@@ -11,13 +11,26 @@ const WEBHOOK_PATH = '/webhook';
 
 async function setBotCommands(): Promise<void> {
   if (!bot) return;
+  // Команды для всех участников (видны всем)
   await bot.api.setMyCommands([
     { command: 'start', description: 'Открыть приложение и участвовать' },
-    { command: 'sick', description: 'Сообщить о болезни на сегодня' },
     { command: 'app', description: 'Открыть приложение челленджа' },
+    { command: 'sick', description: 'Сообщить о болезни на сегодня' },
     { command: 'rules', description: 'Правила челленджа' },
-    { command: 'id', description: 'Узнать свой Telegram ID' },
   ]);
+  // Дополнительные команды для администраторов групп
+  await bot.api.setMyCommands(
+    [
+      { command: 'app', description: 'Открыть приложение челленджа' },
+      { command: 'sick', description: 'Сообщить о болезни на сегодня' },
+      { command: 'rules', description: 'Правила челленджа' },
+      { command: 'bindchat', description: 'Привязать этот чат к челленджу' },
+      { command: 'chatid', description: 'Показать ID этого чата' },
+      { command: 'pinapp', description: 'Закрепить кнопку приложения' },
+      { command: 'report', description: 'Сформировать отчёт за день' },
+    ],
+    { scope: { type: 'all_chat_administrators' } },
+  );
 }
 
 /** Кнопка-меню бота (слева от поля ввода) открывает Web App. Требует https-URL. */
