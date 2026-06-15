@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Пользователь Telegram
+model User {
+  id         Int      @id @default(autoincrement())
+  telegramId BigInt   @unique
+  username   String?
+  firstName  String?
+  lastName   String?
+  photoUrl   String?
+  isAdmin    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  participations Participation[]
+}
+
+// Челлендж (например «Планка каждый день»). Все настройки редактируются в админке.
+model Challenge {
+  id                 Int      @id @default(autoincrement())
+  key                String   @unique
+  title              String
+  description        String   @default("")
+  rulesText          String   @default("")
+  isActive           Boolean  @default(true)
+  timezone           String   @default("Europe/Moscow")
+  startDate          DateTime @db.Date
+  dailyDeadline      String   @default("23:59") // HH:mm в TZ челленджа
+  sickDeadline       String   @default("14:00") // HH:mm в TZ челленджа
+  minDurationSec     Int      @default(60)
+  fineAmount         Int      @default(500)
+  fakeFineMultiplier Int      @default(2)
+  chatId             BigInt? // мониторимая группа
+  freezeStreakOnSick Boolean  @default(true)
+  reportTime         String   @default("00:05") // когда слать отчёт за предыдущий день
+  reminderTime       String   @default("21:00") // когда напоминать тем, кто не прислал кружок
+  createdAt          DateTime @default(now())
+
+  participations Participation[]
+  submissions    Submission[]
+  sickDays       SickDay[]
+  ledger         LedgerEntry[]
+  quotes         MotivationalQuote[]
+  reports        DailyReport[]
+}
+
+// Участие пользователя в челлендже («подтверждение участия»)
+model Participation {
+  id          Int      @id @default(autoincrement())
+  challengeId Int
+  userId      Int
+  status      String   @default("active") // active | left
+  joinedAt    DateTime @default(now())
+
+  challenge   Challenge     @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+  sickDays    SickDay[]
+  ledger      LedgerEntry[]
+
+  @@unique([challengeId, userId])
+}
+
+// Подтверждение планки (видео-кружок)
+model Submission {
+  id              Int      @id @default(autoincrement())
+  challengeId     Int
+  participationId Int
+  day             DateTime @db.Date // день челленджа в его TZ
+  messageId       BigInt?
+  videoDuration   Int?
+  submittedAt     DateTime @default(now())
+  status          String   @default("counted") // counted | late | fake | rejected
+  createdAt       DateTime @default(now())
+
+  challenge     Challenge     @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  participation Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+
+  @@unique([participationId, day])
+}
+
+// Заявка о болезни/травме
+model SickDay {
+  id              Int      @id @default(autoincrement())
+  challengeId     Int
+  participationId Int
+  day             DateTime @db.Date
+  reportedAt      DateTime @default(now())
+  status          String   @default("valid") // valid (до дедлайна) | late
+  note            String?
+
+  challenge     Challenge     @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  participation Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+
+  @@unique([participationId, day])
+}
+
+// Реестр банка: текущий банк = SUM(amount). amount > 0 пополняет, < 0 списывает.
+model LedgerEntry {
+  id              Int       @id @default(autoincrement())
+  challengeId     Int
+  participationId Int?
+  type            String // miss | fake | adjustment | spend
+  amount          Int
+  day             DateTime? @db.Date
+  note            String?
+  createdAt       DateTime  @default(now())
+
+  challenge     Challenge      @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  participation Participation? @relation(fields: [participationId], references: [id], onDelete: SetNull)
+}
+
+// Мотивационная речь (редактируется в админке)
+model MotivationalQuote {
+  id          Int       @id @default(autoincrement())
+  challengeId Int? // null = глобальная
+  text        String
+  isActive    Boolean   @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  challenge Challenge? @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+}
+
+// Лог отправленных дневных отчётов (идемпотентность)
+model DailyReport {
+  id          Int      @id @default(autoincrement())
+  challengeId Int
+  day         DateTime @db.Date
+  content     String
+  sentAt      DateTime @default(now())
+
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, day])
+}

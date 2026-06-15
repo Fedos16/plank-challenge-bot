@@ -1,0 +1,6 @@
+# Автоматический HTTPS (Let's Encrypt) для вашего домена.
+# PUBLIC_DOMAIN берётся из переменной окружения (см. docker-compose.yml / .env).
+{$PUBLIC_DOMAIN} {
+	encode gzip
+	reverse_proxy app:3000
+}
