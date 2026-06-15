@@ -5,6 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# деплои не пересекаются между собой
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -12,8 +13,15 @@ concurrency:
 jobs:
   deploy:
     # self-hosted раннер развёрнут прямо на сервере (challenge-vps): деплой локально, без SSH,
-    # не зависит от GitHub-hosted минут. Скрипт берёт flock — общий с systemd-таймером.
+    # не зависит от GitHub-hosted минут/биллинга.
     runs-on: [self-hosted, linux, x64]
     steps:
       - name: Pull latest and redeploy
-        run: /usr/local/bin/challenge-deploy.sh
+        run: |
+          set -e
+          cd /opt/challenge
+          git fetch --quiet origin main
+          git reset --hard origin/main
+          docker compose up -d --build
+          docker image prune -f
+          docker compose ps

@@ -164,16 +164,11 @@ Inline-кнопки `web_app` Telegram разрешает только в лич
 
 ## Авто-деплой
 
-Два механизма (уживаются вместе):
+Деплой по пушу в `main` через **GitHub Actions на self-hosted раннере**
+(`.github/workflows/deploy.yml`). Раннер развёрнут прямо на сервере, поэтому деплой выполняется
+локально (без SSH) и не зависит от GitHub-hosted минут/биллинга. Шаги job:
+`git fetch && git reset --hard origin/main && docker compose up -d --build`.
 
-1. **GitHub Actions** (`.github/workflows/deploy.yml`) — по пушу в `main` подключается по SSH к
-   серверу и делает `git reset --hard origin/main` + `docker compose up -d --build`.
-   Нужны секреты репозитория: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`. Требует активного
-   биллинга GitHub Actions.
-2. **systemd-таймер на сервере** (`deploy/`) — опрашивает `origin/main` каждые 2 минуты и
-   деплоит при изменении. Не зависит от GitHub Actions/биллинга. Файлы:
-   `deploy/challenge-deploy.sh` → `/usr/local/bin/`, `deploy/challenge-deploy.{service,timer}` →
-   `/etc/systemd/system/`, затем `systemctl enable --now challenge-deploy.timer`.
-
-Сервер развёрнут как git-клон в `/opt/challenge`; `.env` лежит рядом (в `.gitignore`) и при
-деплое не перезаписывается.
+Сервер развёрнут как git-клон в `/opt/challenge`; `.env` лежит рядом (в `.gitignore`) и
+`git reset --hard` его не трогает. Раннер: служба
+`actions.runner.Fedos16-plank-challenge-bot.challenge-vps` (`/opt/actions-runner`, под root).
