@@ -84,7 +84,7 @@ export const api = {
   adminDayOverride: (data: {
     participationId: number;
     day: string;
-    action: 'done' | 'missed' | 'sick' | 'clear';
+    action: 'done' | 'missed' | 'sick' | 'clear' | 'fake';
   }) => request<{ ok: boolean }>('/admin/day-override', { method: 'POST', body: JSON.stringify(data) }),
 
   adminRunReport: (day?: string) =>

@@ -242,7 +242,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       !body.participationId ||
       !body.day ||
       !/^\d{4}-\d{2}-\d{2}$/.test(body.day) ||
-      !['done', 'missed', 'sick', 'clear'].includes(body.action ?? '')
+      !['done', 'missed', 'sick', 'clear', 'fake'].includes(body.action ?? '')
     ) {
       return reply.code(400).send({ error: 'bad_request' });
     }

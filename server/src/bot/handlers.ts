@@ -273,9 +273,9 @@ export function registerHandlers(): void {
         ? `⚠️ ${name}, кружок принят, но после дедлайна — засчитан как пропуск (штраф ${challenge.fineAmount} ₽).`
         : `✅ ${name}, планка засчитана! (${duration} сек)`;
 
+    // Без публичных кнопок модерации — фейк/снятие зачёта делается в админке.
     await ctx.reply(note, {
       reply_parameters: { message_id: ctx.message.message_id },
-      reply_markup: moderationKeyboard(result.submission.id),
       parse_mode: 'HTML',
     });
   });

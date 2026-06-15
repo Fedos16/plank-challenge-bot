@@ -138,7 +138,7 @@ async function loadDay() {
     dayRows.value = (await api.adminGetDay(dayDate.value)).rows;
   }, 'Загружено');
 }
-async function override(p: DayStatusRow, action: 'done' | 'missed' | 'sick' | 'clear') {
+async function override(p: DayStatusRow, action: 'done' | 'missed' | 'sick' | 'clear' | 'fake') {
   await run(async () => {
     await api.adminDayOverride({ participationId: p.participationId, day: dayDate.value, action });
     dayRows.value = (await api.adminGetDay(dayDate.value)).rows;
@@ -353,9 +353,10 @@ onMounted(loadSettings);
           <b>{{ p.name }}</b>
           <span :class="`badge ${p.state}`" style="margin-left: 6px">{{ STATE_LABEL[p.state] }}</span>
           <div class="inline-actions" style="margin-top: 6px">
-            <button class="btn small" @click="override(p, 'done')">✅</button>
-            <button class="btn small danger" @click="override(p, 'missed')">❌</button>
-            <button class="btn small secondary" @click="override(p, 'sick')">🤒</button>
+            <button class="btn small" @click="override(p, 'done')">✅ Засчитать</button>
+            <button class="btn small danger" @click="override(p, 'missed')">❌ Пропуск</button>
+            <button class="btn small danger" @click="override(p, 'fake')">⚠️ Фейк ×{{ settings?.fakeFineMultiplier ?? 2 }}</button>
+            <button class="btn small secondary" @click="override(p, 'sick')">🤒 Болел</button>
             <button class="btn small secondary" @click="override(p, 'clear')">Сброс</button>
           </div>
         </div>
