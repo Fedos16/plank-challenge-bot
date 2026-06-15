@@ -3,9 +3,9 @@ import { onMounted, ref } from 'vue';
 import { api } from '../api';
 import type { AdminChallenge, DayStatusRow, LedgerEntry, Participant, Quote } from '../types';
 import { STATE_LABEL, formatDateRu, formatDateTimeRu, formatMoney, yesterdayISO } from '../helpers';
-import { haptic } from '../telegram';
+import { confirmAction, haptic } from '../telegram';
 
-type Sub = 'settings' | 'bank' | 'quotes' | 'people' | 'day' | 'report';
+type Sub = 'settings' | 'bank' | 'quotes' | 'people' | 'day' | 'report' | 'reset';
 const sub = ref<Sub>('settings');
 
 const toast = ref<string | null>(null);
@@ -157,6 +157,52 @@ async function runReport() {
   }, 'Отчёт сформирован');
 }
 
+// ---- Сброс / очистка данных ----
+const resetBusy = ref(false);
+async function withConfirm(message: string, fn: () => Promise<void>, okMsg: string) {
+  if (resetBusy.value) return;
+  const ok = await confirmAction(message);
+  if (!ok) return;
+  resetBusy.value = true;
+  try {
+    await fn();
+    showToast(okMsg);
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : 'Ошибка', false);
+  } finally {
+    resetBusy.value = false;
+  }
+}
+function resetLedgerData() {
+  void withConfirm('Очистить все штрафы и обнулить банк? Это нельзя отменить.', async () => {
+    await api.adminResetLedger();
+  }, 'Штрафы очищены, банк = 0');
+}
+function resetParticipantsData() {
+  void withConfirm(
+    'Удалить ВСЕХ участников вместе с их подтверждениями, болезнями и штрафами? Это нельзя отменить.',
+    async () => {
+      await api.adminResetParticipants();
+    },
+    'Участники удалены',
+  );
+}
+function unbindChatData() {
+  void withConfirm('Отвязать чат от челленджа? Кружки перестанут засчитываться, пока не выполните /bindchat снова.', async () => {
+    await api.adminResetChat();
+    if (settings.value) settings.value.chatId = null;
+  }, 'Чат отвязан');
+}
+function resetAllData() {
+  void withConfirm(
+    'ПОЛНЫЙ сброс данных: участники, подтверждения, болезни, штрафы, банк и отчёты. Настройки и речи сохранятся. Продолжить?',
+    async () => {
+      await api.adminResetAll();
+    },
+    'Данные полностью очищены',
+  );
+}
+
 function openSub(s: Sub) {
   sub.value = s;
   if (s === 'settings' && !settings.value) void loadSettings();
@@ -177,6 +223,7 @@ onMounted(loadSettings);
       <button :class="{ active: sub === 'people' }" @click="openSub('people')">Участники</button>
       <button :class="{ active: sub === 'day' }" @click="openSub('day')">Корректировки</button>
       <button :class="{ active: sub === 'report' }" @click="openSub('report')">Отчёт</button>
+      <button :class="{ active: sub === 'reset' }" @click="openSub('reset')">Сброс</button>
     </div>
 
     <!-- Настройки -->
@@ -326,6 +373,64 @@ onMounted(loadSettings);
       </div>
     </div>
 
+    <!-- Сброс / очистка -->
+    <div v-else-if="sub === 'reset'">
+      <div class="card">
+        <div class="muted" style="margin-bottom: 12px">
+          Очистка данных челленджа. Действия необратимы. Настройки челленджа и мотивационные речи
+          при этом сохраняются.
+        </div>
+
+        <div class="reset-row">
+          <div class="grow">
+            <b>Очистить штрафы и банк</b>
+            <div class="muted">Удалит все записи реестра, банк станет 0 ₽.</div>
+          </div>
+          <button class="btn small danger" :disabled="resetBusy" @click="resetLedgerData">Очистить</button>
+        </div>
+
+        <div class="reset-row">
+          <div class="grow">
+            <b>Удалить участников</b>
+            <div class="muted">Все участники + их подтверждения, больничные и штрафы.</div>
+          </div>
+          <button class="btn small danger" :disabled="resetBusy" @click="resetParticipantsData">Удалить</button>
+        </div>
+
+        <div class="reset-row">
+          <div class="grow">
+            <b>Отвязать чат</b>
+            <div class="muted">Сбросит привязанный чат. Потом нужно снова /bindchat.</div>
+          </div>
+          <button class="btn small danger" :disabled="resetBusy" @click="unbindChatData">Отвязать</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <b>Полный сброс данных</b>
+        <div class="muted" style="margin: 4px 0 10px">
+          Участники, подтверждения, болезни, штрафы, банк и отчёты — всё разом. Настройки и речи остаются.
+        </div>
+        <button class="btn danger" :disabled="resetBusy" @click="resetAllData">Сбросить всё</button>
+      </div>
+    </div>
+
     <div v-if="toast" class="toast">{{ toast }}</div>
   </div>
 </template>
+
+<style scoped>
+.reset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+}
+.reset-row:last-child {
+  border-bottom: none;
+}
+.reset-row .grow {
+  flex: 1;
+}
+</style>

@@ -92,4 +92,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ day }),
     }),
+
+  // --- сброс / очистка данных ---
+  adminResetLedger: () =>
+    request<{ ok: boolean; deleted: number; bank: number }>('/admin/reset/ledger', { method: 'POST' }),
+  adminResetParticipants: () =>
+    request<{ ok: boolean; removed: number }>('/admin/reset/participants', { method: 'POST' }),
+  adminResetChat: () => request<{ ok: boolean }>('/admin/reset/chat', { method: 'POST' }),
+  adminResetAll: () => request<{ ok: boolean; bank: number }>('/admin/reset/all', { method: 'POST' }),
 };

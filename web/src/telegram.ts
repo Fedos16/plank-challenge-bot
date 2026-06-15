@@ -7,6 +7,7 @@ interface TelegramWebApp {
   expand: () => void;
   MainButton: { hide: () => void };
   HapticFeedback?: { impactOccurred: (s: string) => void; notificationOccurred: (t: string) => void };
+  showConfirm?: (message: string, callback: (ok: boolean) => void) => void;
 }
 
 declare global {
@@ -36,4 +37,19 @@ export function haptic(type: 'success' | 'error' | 'warning' = 'success'): void 
   } catch {
     /* ignore */
   }
+}
+
+/** Диалог подтверждения: нативный в Telegram, иначе window.confirm. */
+export function confirmAction(message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (tg?.showConfirm) {
+      try {
+        tg.showConfirm(message, (ok) => resolve(Boolean(ok)));
+        return;
+      } catch {
+        /* fallthrough */
+      }
+    }
+    resolve(window.confirm(message));
+  });
 }

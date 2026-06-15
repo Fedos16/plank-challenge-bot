@@ -8,6 +8,7 @@ import { applyDayOverride, type OverrideAction } from '../services/manual';
 import { sendDailyReport } from '../services/report';
 import { displayName } from '../services/users';
 import { getParticipationStreaks } from '../services/streaks';
+import { resetAllData, resetLedger, resetParticipants, unbindChat } from '../services/reset';
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authPreHandler);
@@ -258,6 +259,35 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       body.day && /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : yesterdayDay(ch.timezone);
     const result = await sendDailyReport(ch, day, { force: true });
     return { ok: true, sent: result.sent, day, content: result.content };
+  });
+
+  // ---- Сброс / очистка данных ----
+  app.post('/reset/ledger', async (req, reply) => {
+    const ch = requireChallenge(req);
+    if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
+    const deleted = await resetLedger(ch.id);
+    return { ok: true, deleted, bank: await getBank(ch.id) };
+  });
+
+  app.post('/reset/participants', async (req, reply) => {
+    const ch = requireChallenge(req);
+    if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
+    const removed = await resetParticipants(ch.id);
+    return { ok: true, removed };
+  });
+
+  app.post('/reset/chat', async (req, reply) => {
+    const ch = requireChallenge(req);
+    if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
+    await unbindChat(ch.id);
+    return { ok: true };
+  });
+
+  app.post('/reset/all', async (req, reply) => {
+    const ch = requireChallenge(req);
+    if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
+    await resetAllData(ch.id);
+    return { ok: true, bank: await getBank(ch.id) };
   });
 }
 
