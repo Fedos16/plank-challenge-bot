@@ -2,7 +2,7 @@
 import { onMounted, ref, watch } from 'vue';
 import { api } from '../api';
 import type { ChallengePublic, LeaderboardRow } from '../types';
-import { formatMoney } from '../helpers';
+import { formatDateRu, formatMoney } from '../helpers';
 
 const props = defineProps<{ challengeId: number; challenge: ChallengePublic }>();
 
@@ -38,7 +38,7 @@ watch(() => props.challengeId, load);
       </div>
       <div style="text-align: right">
         <div class="muted">Старт</div>
-        <div style="font-weight: 600">{{ challenge.startDate }}</div>
+        <div style="font-weight: 600">{{ formatDateRu(challenge.startDate) }}</div>
       </div>
     </div>
 

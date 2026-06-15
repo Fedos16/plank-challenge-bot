@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { api } from '../api';
 import type { AdminChallenge, DayStatusRow, LedgerEntry, Participant, Quote } from '../types';
-import { STATE_LABEL, formatMoney, yesterdayISO } from '../helpers';
+import { STATE_LABEL, formatDateRu, formatDateTimeRu, formatMoney, yesterdayISO } from '../helpers';
 import { haptic } from '../telegram';
 
 type Sub = 'settings' | 'bank' | 'quotes' | 'people' | 'day' | 'report';
@@ -175,7 +175,7 @@ onMounted(loadSettings);
       <button :class="{ active: sub === 'bank' }" @click="openSub('bank')">Банк</button>
       <button :class="{ active: sub === 'quotes' }" @click="openSub('quotes')">Речи</button>
       <button :class="{ active: sub === 'people' }" @click="openSub('people')">Участники</button>
-      <button :class="{ active: sub === 'day' }" @click="openSub('day')">День</button>
+      <button :class="{ active: sub === 'day' }" @click="openSub('day')">Корректировки</button>
       <button :class="{ active: sub === 'report' }" @click="openSub('report')">Отчёт</button>
     </div>
 
@@ -186,7 +186,7 @@ onMounted(loadSettings);
       <label class="field"><span class="lbl">Описание</span><textarea v-model="settings.description" /></label>
       <label class="field"><span class="lbl">Текст правил</span><textarea v-model="settings.rulesText" style="min-height: 160px" /></label>
       <label class="field"><span class="lbl">Часовой пояс</span><input v-model="settings.timezone" /></label>
-      <label class="field"><span class="lbl">Дата старта (YYYY-MM-DD)</span><input v-model="settings.startDate" /></label>
+      <label class="field"><span class="lbl">Дата старта</span><input type="date" v-model="settings.startDate" /></label>
       <label class="field"><span class="lbl">Дедлайн кружка (HH:mm)</span><input v-model="settings.dailyDeadline" /></label>
       <label class="field"><span class="lbl">Дедлайн болезни (HH:mm)</span><input v-model="settings.sickDeadline" /></label>
       <label class="field"><span class="lbl">Минимум планки (сек)</span><input type="number" v-model.number="settings.minDurationSec" /></label>
@@ -235,7 +235,11 @@ onMounted(loadSettings);
           <div class="grow">
             <b>{{ e.amount > 0 ? '+' : '' }}{{ formatMoney(e.amount) }}</b>
             <span class="muted"> · {{ e.type }}</span>
-            <div class="muted">{{ e.participant || e.note || '' }} {{ e.day ? '· ' + e.day : '' }}</div>
+            <div class="muted">
+              {{ e.participant || e.note || '' }}
+              {{ e.day ? '· ' + formatDateRu(e.day) : '' }}
+              <span class="muted"> · {{ formatDateTimeRu(e.createdAt) }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -287,10 +291,15 @@ onMounted(loadSettings);
       </div>
     </div>
 
-    <!-- День -->
+    <!-- Корректировки -->
     <div v-else-if="sub === 'day'" class="card">
-      <h3>Статусы за день</h3>
-      <label class="field"><span class="lbl">Дата (YYYY-MM-DD)</span><input v-model="dayDate" /></label>
+      <h3>Корректировки за день</h3>
+      <div class="muted" style="margin-bottom: 12px">
+        Ручная правка отметок за выбранный день, если бот что-то не засчитал автоматически.
+        Выбери дату, загрузи список и поставь нужный статус каждому: ✅ сделал, ❌ пропуск,
+        🤒 болел, «Сброс» — убрать отметку. Меняет серию, пропуски и банк.
+      </div>
+      <label class="field"><span class="lbl">Дата</span><input type="date" v-model="dayDate" /></label>
       <button class="btn secondary" @click="loadDay">Загрузить</button>
       <div v-for="p in dayRows" :key="p.participationId" class="list-item" style="margin-top: 8px">
         <div class="grow">
@@ -309,7 +318,7 @@ onMounted(loadSettings);
     <!-- Отчёт -->
     <div v-else-if="sub === 'report'" class="card">
       <h3>Сформировать отчёт</h3>
-      <label class="field"><span class="lbl">Дата (YYYY-MM-DD)</span><input v-model="reportDay" /></label>
+      <label class="field"><span class="lbl">Дата</span><input type="date" v-model="reportDay" /></label>
       <button class="btn" @click="runReport">Сформировать и отправить</button>
       <div v-if="reportContent" style="margin-top: 12px">
         <div class="muted">{{ reportSent ? 'Отправлено в чат.' : 'Чат не привязан — отчёт не отправлен, но штрафы начислены.' }}</div>
