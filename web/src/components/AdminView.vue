@@ -241,6 +241,7 @@ onMounted(loadSettings);
       <label class="field"><span class="lbl">Множитель за фейк</span><input type="number" v-model.number="settings.fakeFineMultiplier" /></label>
       <label class="field"><span class="lbl">Время отчёта (HH:mm)</span><input v-model="settings.reportTime" /></label>
       <label class="field"><span class="lbl">Время напоминания (HH:mm)</span><input v-model="settings.reminderTime" /></label>
+      <label class="field"><span class="lbl">«Последний шанс» в ЛС (HH:mm, пусто — выкл)</span><input v-model="settings.lastChanceTime" /></label>
       <label class="field"><span class="lbl">ID чата для мониторинга</span><input v-model="settings.chatId" placeholder="напр. -1001234567890" /></label>
       <label class="field" style="display: flex; align-items: center; gap: 10px">
         <input type="checkbox" style="width: auto" v-model="settings.freezeStreakOnSick" />

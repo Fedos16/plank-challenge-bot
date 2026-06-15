@@ -30,6 +30,11 @@ export function startScheduler(): void {
           if (dm) console.log(`[scheduler] Личных напоминаний в ЛС: ${dm}`);
         }
       }
+
+      if (challenge.lastChanceTime && hhmm === challenge.lastChanceTime) {
+        const dm = await sendPersonalReminders(challenge, { lastChance: true });
+        if (dm) console.log(`[scheduler] «Последний шанс» в ЛС: ${dm}`);
+      }
     } catch (err) {
       console.error('[scheduler] Ошибка:', err);
     }

@@ -77,6 +77,7 @@ export interface AdminChallenge {
   dmReminders: boolean;
   reportTime: string;
   reminderTime: string;
+  lastChanceTime: string;
   bank?: number;
 }
 

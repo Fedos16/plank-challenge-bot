@@ -41,6 +41,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       'sickDeadline',
       'reportTime',
       'reminderTime',
+      'lastChanceTime',
     ];
     for (const f of strFields) if (typeof body[f] === 'string') data[f] = body[f];
 
@@ -312,5 +313,6 @@ function serializeChallenge(ch: import('@prisma/client').Challenge) {
     dmReminders: ch.dmReminders,
     reportTime: ch.reportTime,
     reminderTime: ch.reminderTime,
+    lastChanceTime: ch.lastChanceTime,
   };
 }

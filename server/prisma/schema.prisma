@@ -41,6 +41,7 @@ model Challenge {
   reportTime         String   @default("00:05") // когда слать отчёт за предыдущий день
   reminderTime       String   @default("21:00") // когда напоминать тем, кто не прислал кружок
   dmReminders        Boolean  @default(true) // слать личные напоминания в ЛС (помимо чата)
+  lastChanceTime     String   @default("23:30") // «последний шанс» в ЛС перед дедлайном (пусто = выкл)
   createdAt          DateTime @default(now())
 
   participations Participation[]

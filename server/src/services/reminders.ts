@@ -49,7 +49,10 @@ export async function sendDailyReminder(challenge: Challenge): Promise<boolean> 
  * Личные напоминания в ЛС тем, кто сегодня ещё не сделал планку.
  * Кому бот не может написать (не нажали /start) — пропускаем. Возвращает число отправленных.
  */
-export async function sendPersonalReminders(challenge: Challenge): Promise<number> {
+export async function sendPersonalReminders(
+  challenge: Challenge,
+  opts: { lastChance?: boolean } = {},
+): Promise<number> {
   const day = todayDay(challenge.timezone);
   const statuses = await getDayStatuses(challenge, day);
   const pending = statuses.filter((s) => s.state === 'pending');
@@ -68,11 +71,18 @@ export async function sendPersonalReminders(challenge: Challenge): Promise<numbe
 
   let sent = 0;
   for (const s of pending) {
-    const text = [
-      `⏰ <b>${escapeHtml(displayName(s.user))}, не забудь сегодня про планку!</b>`,
-      `Минимум ${challenge.minDurationSec} сек, кружок в общий чат до ${challenge.dailyDeadline}.`,
-      `Иначе штраф ${challenge.fineAmount} ₽ в банк 💰`,
-    ].join('\n');
+    const name = escapeHtml(displayName(s.user));
+    const text = opts.lastChance
+      ? [
+          `🔥 <b>${name}, последний шанс!</b>`,
+          `Скоро дедлайн ${challenge.dailyDeadline} — успей прислать кружок (минимум ${challenge.minDurationSec} сек).`,
+          `Иначе штраф ${challenge.fineAmount} ₽ в банк 💰`,
+        ].join('\n')
+      : [
+          `⏰ <b>${name}, не забудь сегодня про планку!</b>`,
+          `Минимум ${challenge.minDurationSec} сек, кружок в общий чат до ${challenge.dailyDeadline}.`,
+          `Иначе штраф ${challenge.fineAmount} ₽ в банк 💰`,
+        ].join('\n');
     try {
       await bot.api.sendMessage(Number(s.user.telegramId), text, {
         parse_mode: 'HTML',
