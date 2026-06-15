@@ -16,10 +16,13 @@ const DEV_ID = import.meta.env.VITE_DEV_TELEGRAM_ID as string | undefined;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     'X-Telegram-Init-Data': getInitData(),
     ...(options.headers as Record<string, string> | undefined),
   };
+  // Content-Type ставим только когда есть тело — иначе Fastify ругается на пустое JSON-тело
+  if (options.body !== undefined && options.body !== null) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (DEV_ID) {
     headers['X-Dev-Telegram-Id'] = DEV_ID;
     headers['X-Dev-Name'] = 'Dev User';

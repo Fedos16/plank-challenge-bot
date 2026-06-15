@@ -13,6 +13,21 @@ export function resolveWebDist(): string {
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, trustProxy: true });
 
+  // Допускаем пустое тело при Content-Type: application/json (POST без полей, напр. /sick)
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const str = (body as string).trim();
+    if (str.length === 0) {
+      done(null, {});
+      return;
+    }
+    try {
+      done(null, JSON.parse(str));
+    } catch (err) {
+      (err as { statusCode?: number }).statusCode = 400;
+      done(err as Error);
+    }
+  });
+
   app.get('/health', async () => ({ ok: true }));
 
   await app.register(userRoutes, { prefix: '/api' });
