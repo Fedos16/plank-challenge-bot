@@ -104,12 +104,13 @@ model SickDay {
   @@unique([participationId, day])
 }
 
-// Реестр банка: текущий банк = SUM(amount). amount > 0 пополняет, < 0 списывает.
+// Реестр банка: банк = SUM(amount) по типам miss|fake|adjustment|spend. amount > 0 пополняет, < 0 списывает.
+// payment (оплата участника, «сколько скинул») хранится с положительной суммой, гасит личный долг, но в банк не входит.
 model LedgerEntry {
   id              Int       @id @default(autoincrement())
   challengeId     Int
   participationId Int?
-  type            String // miss | fake | adjustment | spend
+  type            String // miss | fake | adjustment | spend | payment
   amount          Int
   day             DateTime? @db.Date
   note            String?

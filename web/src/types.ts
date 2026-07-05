@@ -119,6 +119,31 @@ export interface LedgerEntry {
   participant: string | null;
 }
 
+export interface DebtRow {
+  participationId: number;
+  userId: number;
+  name: string;
+  status: string;
+  accrued: number;
+  paid: number;
+  debt: number;
+}
+
+export interface PaymentEntry {
+  id: number;
+  participationId: number | null;
+  participant: string | null;
+  amount: number;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface DebtsOverview {
+  rows: DebtRow[];
+  recentPayments: PaymentEntry[];
+  totals: { accrued: number; paid: number; debt: number };
+}
+
 export interface Participant {
   participationId: number;
   userId: number;

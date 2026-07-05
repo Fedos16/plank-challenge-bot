@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from '../api';
-import type { AdminChallenge, DayStatusRow, LedgerEntry, Participant, Quote } from '../types';
+import type {
+  AdminChallenge,
+  DayStatusRow,
+  DebtRow,
+  DebtsOverview,
+  LedgerEntry,
+  Participant,
+  PaymentEntry,
+  Quote,
+} from '../types';
 import { STATE_LABEL, formatDateRu, formatDateTimeRu, formatMoney, yesterdayISO } from '../helpers';
 import { confirmAction, haptic } from '../telegram';
 
-type Sub = 'settings' | 'bank' | 'quotes' | 'people' | 'day' | 'report' | 'reset';
+type Sub = 'settings' | 'bank' | 'debts' | 'quotes' | 'people' | 'day' | 'report' | 'reset';
 const sub = ref<Sub>('settings');
 
 const toast = ref<string | null>(null);
@@ -76,6 +85,37 @@ async function addSpend() {
     spendNote.value = '';
     await loadBank();
   }, 'Трата записана');
+}
+
+// ---- Долги / оплаты ----
+const debts = ref<DebtsOverview | null>(null);
+const payInput = ref<Record<number, number | null>>({});
+const payNote = ref<Record<number, string>>({});
+async function loadDebts() {
+  debts.value = await api.adminGetDebts();
+}
+async function addPayment(row: DebtRow) {
+  const amount = payInput.value[row.participationId];
+  if (!amount || amount <= 0) return;
+  await run(async () => {
+    debts.value = await api.adminAddPayment({
+      participationId: row.participationId,
+      amount,
+      note: payNote.value[row.participationId] || undefined,
+    });
+    payInput.value[row.participationId] = null;
+    payNote.value[row.participationId] = '';
+  }, 'Оплата записана');
+}
+function payFull(row: DebtRow) {
+  if (row.debt > 0) payInput.value[row.participationId] = row.debt;
+}
+async function deletePayment(pmt: PaymentEntry) {
+  const ok = await confirmAction(`Удалить оплату ${formatMoney(pmt.amount)}${pmt.participant ? ' · ' + pmt.participant : ''}?`);
+  if (!ok) return;
+  await run(async () => {
+    debts.value = await api.adminDeletePayment(pmt.id);
+  }, 'Оплата удалена');
 }
 
 // ---- Речи ----
@@ -207,6 +247,7 @@ function openSub(s: Sub) {
   sub.value = s;
   if (s === 'settings' && !settings.value) void loadSettings();
   if (s === 'bank') void loadBank();
+  if (s === 'debts') void loadDebts();
   if (s === 'quotes') void loadQuotes();
   if (s === 'people') void loadPeople();
 }
@@ -219,6 +260,7 @@ onMounted(loadSettings);
     <div class="subtabs">
       <button :class="{ active: sub === 'settings' }" @click="openSub('settings')">Настройки</button>
       <button :class="{ active: sub === 'bank' }" @click="openSub('bank')">Банк</button>
+      <button :class="{ active: sub === 'debts' }" @click="openSub('debts')">Долги</button>
       <button :class="{ active: sub === 'quotes' }" @click="openSub('quotes')">Речи</button>
       <button :class="{ active: sub === 'people' }" @click="openSub('people')">Участники</button>
       <button :class="{ active: sub === 'day' }" @click="openSub('day')">Корректировки</button>
@@ -293,6 +335,66 @@ onMounted(loadSettings);
               <span class="muted"> · {{ formatDateTimeRu(e.createdAt) }}</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Долги -->
+    <div v-else-if="sub === 'debts'">
+      <div v-if="debts" class="debt-totals">
+        <div class="bank-chip">
+          <span>🧾 Всего долгов</span>
+          <span class="v">{{ formatMoney(debts.totals.debt) }}</span>
+        </div>
+        <div class="bank-chip">
+          <span>✅ Скинули</span>
+          <span class="v">{{ formatMoney(debts.totals.paid) }} / {{ formatMoney(debts.totals.accrued) }}</span>
+        </div>
+      </div>
+
+      <div v-if="debts" class="card">
+        <h3>Кто сколько должен</h3>
+        <div class="muted" style="margin-bottom: 10px">
+          Долг = начисленные штрафы минус то, что участник уже скинул. Оплаты на банк не влияют
+          (штраф уже учтён в банке), они лишь гасят личный долг.
+        </div>
+        <div v-if="!debts.rows.length" class="muted">Участников пока нет.</div>
+        <div v-for="row in debts.rows" :key="row.participationId" class="list-item">
+          <div class="grow">
+            <b>{{ row.name }}</b>
+            <span v-if="row.status === 'left'" class="badge missed" style="margin-left: 6px">вышел</span>
+            <div class="muted">
+              Начислено {{ formatMoney(row.accrued) }} · скинул {{ formatMoney(row.paid) }} ·
+              <span
+                :class="row.debt > 0 ? 'debt-pos' : row.debt < 0 ? 'debt-neg' : 'debt-zero'"
+              >{{ row.debt > 0 ? 'долг ' + formatMoney(row.debt) : row.debt < 0 ? 'переплата ' + formatMoney(-row.debt) : 'рассчитался' }}</span>
+            </div>
+            <div class="pay-row" style="margin-top: 6px">
+              <input
+                type="number"
+                inputmode="numeric"
+                placeholder="Скинул, ₽"
+                v-model.number="payInput[row.participationId]"
+              />
+              <input type="text" placeholder="Комментарий" v-model="payNote[row.participationId]" />
+              <button class="btn small secondary" :disabled="row.debt <= 0" @click="payFull(row)">Весь долг</button>
+              <button class="btn small" @click="addPayment(row)">Записать</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="debts && debts.recentPayments.length" class="card">
+        <h3>История оплат</h3>
+        <div v-for="p in debts.recentPayments" :key="p.id" class="list-item">
+          <div class="grow">
+            <b>+{{ formatMoney(p.amount) }}</b>
+            <span class="muted"> · {{ p.participant || '—' }}</span>
+            <div class="muted">
+              {{ p.note || '' }}<span v-if="p.note"> · </span>{{ formatDateTimeRu(p.createdAt) }}
+            </div>
+          </div>
+          <button class="btn small danger" @click="deletePayment(p)">Удалить</button>
         </div>
       </div>
     </div>
@@ -426,6 +528,35 @@ onMounted(loadSettings);
 </template>
 
 <style scoped>
+.debt-totals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pay-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.pay-row input[type='number'] {
+  width: 110px;
+}
+.pay-row input[type='text'] {
+  flex: 1;
+  min-width: 120px;
+}
+.debt-pos {
+  color: #e5484d;
+  font-weight: 600;
+}
+.debt-neg {
+  color: #f5a623;
+}
+.debt-zero {
+  color: #30a46c;
+}
 .reset-row {
   display: flex;
   align-items: center;

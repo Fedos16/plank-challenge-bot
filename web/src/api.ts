@@ -3,6 +3,7 @@ import type {
   AdminChallenge,
   ChallengePublic,
   DayStatusRow,
+  DebtsOverview,
   LeaderboardRow,
   LedgerEntry,
   MyChallengesResponse,
@@ -85,6 +86,15 @@ export const api = {
     }),
   adminDeleteQuote: (id: number) =>
     request<{ ok: boolean }>(`/admin/quotes/${id}`, { method: 'DELETE' }),
+
+  adminGetDebts: () => request<DebtsOverview>('/admin/debts'),
+  adminAddPayment: (data: { participationId: number; amount: number; note?: string }) =>
+    request<DebtsOverview & { ok: boolean }>('/admin/payments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  adminDeletePayment: (id: number) =>
+    request<DebtsOverview & { ok: boolean }>(`/admin/payments/${id}`, { method: 'DELETE' }),
 
   adminGetParticipants: () => request<{ rows: Participant[] }>('/admin/participants'),
   adminUpdateParticipant: (id: number, data: { status?: string; isAdmin?: boolean }) =>

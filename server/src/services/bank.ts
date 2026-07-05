@@ -1,10 +1,14 @@
 import { prisma } from '../lib/prisma';
 import { dayToDate, type DayStr } from '../lib/time';
 
-/** Текущий банк челленджа = сумма всех записей реестра. */
+// Типы записей, которые формируют банк. `payment` (кто сколько скинул) сюда не входит:
+// штраф уже учтён в банке при начислении, а оплата лишь гасит личный долг участника.
+const BANK_TYPES = ['miss', 'fake', 'adjustment', 'spend'] as const;
+
+/** Текущий банк челленджа = сумма записей реестра, влияющих на банк (без оплат). */
 export async function getBank(challengeId: number): Promise<number> {
   const agg = await prisma.ledgerEntry.aggregate({
-    where: { challengeId },
+    where: { challengeId, type: { in: BANK_TYPES as unknown as string[] } },
     _sum: { amount: true },
   });
   return agg._sum.amount ?? 0;
@@ -92,4 +96,30 @@ export async function addSpend(
   await prisma.ledgerEntry.create({
     data: { challengeId, type: 'spend', amount: negative, note: note ?? null },
   });
+}
+
+/**
+ * Записать оплату участника («сколько скинул»). Хранится типом `payment`
+ * с положительной суммой и гасит личный долг, но на банк не влияет.
+ */
+export async function addPayment(params: {
+  challengeId: number;
+  participationId: number;
+  amount: number;
+  note?: string;
+}): Promise<void> {
+  await prisma.ledgerEntry.create({
+    data: {
+      challengeId: params.challengeId,
+      participationId: params.participationId,
+      type: 'payment',
+      amount: Math.abs(Math.trunc(params.amount)),
+      note: params.note ?? null,
+    },
+  });
+}
+
+/** Удалить запись об оплате (отмена «скинул»). */
+export async function removePayment(challengeId: number, id: number): Promise<void> {
+  await prisma.ledgerEntry.deleteMany({ where: { id, challengeId, type: 'payment' } });
 }

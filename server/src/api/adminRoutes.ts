@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { adminPreHandler, authPreHandler } from './auth';
 import { prisma } from '../lib/prisma';
 import { dateToDay, dayToDate, yesterdayDay } from '../lib/time';
-import { addAdjustment, addSpend, getBank } from '../services/bank';
+import { addAdjustment, addPayment, addSpend, getBank, removePayment } from '../services/bank';
+import { getDebtsOverview } from '../services/debts';
 import { getDayStatuses } from '../services/dayStatus';
 import { applyDayOverride, type OverrideAction } from '../services/manual';
 import { sendDailyReport } from '../services/report';
@@ -78,7 +79,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const ch = requireChallenge(req);
     if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
     const entries = await prisma.ledgerEntry.findMany({
-      where: { challengeId: ch.id },
+      where: { challengeId: ch.id, type: { not: 'payment' } },
       orderBy: { createdAt: 'desc' },
       take: 200,
       include: { participation: { include: { user: true } } },
@@ -125,6 +126,39 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const delta = target - current;
     if (delta !== 0) await addAdjustment(ch.id, delta, body.note ?? 'Установка банка вручную');
     return { ok: true, bank: await getBank(ch.id) };
+  });
+
+  // ---- Долги / оплаты ----
+  app.get('/debts', async (req, reply) => {
+    const ch = requireChallenge(req);
+    if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
+    return getDebtsOverview(ch.id);
+  });
+
+  app.post('/payments', async (req, reply) => {
+    const ch = requireChallenge(req);
+    if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
+    const body = (req.body ?? {}) as { participationId?: number; amount?: number; note?: string };
+    const participationId = Math.trunc(Number(body.participationId));
+    const amount = Math.trunc(Number(body.amount));
+    if (!participationId || Number.isNaN(amount) || amount <= 0) {
+      return reply.code(400).send({ error: 'invalid_payment' });
+    }
+    const p = await prisma.participation.findFirst({
+      where: { id: participationId, challengeId: ch.id },
+    });
+    if (!p) return reply.code(404).send({ error: 'participant_not_found' });
+    await addPayment({ challengeId: ch.id, participationId, amount, note: body.note });
+    return { ok: true, ...(await getDebtsOverview(ch.id)) };
+  });
+
+  app.delete('/payments/:id', async (req, reply) => {
+    const ch = requireChallenge(req);
+    if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
+    const id = Number((req.params as { id: string }).id);
+    if (Number.isNaN(id)) return reply.code(400).send({ error: 'bad_id' });
+    await removePayment(ch.id, id);
+    return { ok: true, ...(await getDebtsOverview(ch.id)) };
   });
 
   // ---- Мотивационные речи ----
