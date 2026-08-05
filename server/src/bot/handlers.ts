@@ -40,6 +40,17 @@ export function registerHandlers(): void {
     console.error(`[bot] ошибка при обработке апдейта ${updateId}:`, err.error);
   });
 
+  // bot.catch срабатывает только при long polling: webhookCallback вызывает bot.handleUpdate
+  // напрямую, и ошибка оттуда всплывает мимо errorHandler. Ловим её здесь, иначе при сетевом
+  // сбое (например, недоступен api.telegram.org) необработанный reject роняет весь процесс.
+  bot.use(async (ctx, next) => {
+    try {
+      await next();
+    } catch (err) {
+      console.error(`[bot] ошибка при обработке апдейта ${ctx.update.update_id}:`, err);
+    }
+  });
+
   // /start — регистрация и кнопка открытия Web App
   bot.command('start', async (ctx) => {
     if (!ctx.from) return;

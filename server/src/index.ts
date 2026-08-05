@@ -57,6 +57,11 @@ async function main(): Promise<void> {
       WEBHOOK_PATH,
       webhookCallback(bot, 'fastify', {
         secretToken: config.webhookSecret || undefined,
+        // Если обработка затянулась (например, зависли исходящие запросы к api.telegram.org),
+        // всё равно отвечаем Telegram, а обработку доводим в фоне. Иначе Telegram получает
+        // «Read timeout expired» и бесконечно ретраит один и тот же апдейт.
+        onTimeout: 'return',
+        timeoutMilliseconds: 5_000,
       }),
     );
   }
