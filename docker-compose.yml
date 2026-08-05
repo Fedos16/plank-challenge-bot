@@ -3,10 +3,6 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    environment:
-      # api.telegram.org отвечает по IPv6, но не по IPv4 (см. networks ниже).
-      # node-fetch берёт первый адрес из DNS, поэтому явно ставим IPv6 вперёд.
-      NODE_OPTIONS: --dns-result-order=ipv6first
     depends_on:
       db:
         condition: service_healthy
@@ -44,9 +40,10 @@ services:
       - app
 
 # IPv4-маршрут от сервера до api.telegram.org не работает, IPv6 — работает. Поэтому
-# контейнерам нужен IPv6. Адрес ULA-подсети зашит: по нему challenge-ipv6-snat.sh на хосте
-# подменяет source-адрес на глобальный IPv6 сервера (штатный MASQUERADE этого не делает,
-# так как адрес сервера помечен deprecated).
+# контейнерам нужен IPv6 (сам бот включает его через TELEGRAM_IP_FAMILY=6 в .env).
+# Адрес ULA-подсети зашит: по нему challenge-ipv6-snat.sh на хосте подменяет source-адрес
+# на глобальный IPv6 сервера (штатный MASQUERADE этого не делает, так как адрес сервера
+# помечен deprecated).
 networks:
   default:
     enable_ipv6: true
