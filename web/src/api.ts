@@ -2,7 +2,6 @@ import { getInitData } from './telegram';
 import type {
   AdminChallenge,
   ChallengePublic,
-  DayStatusRow,
   DebtsOverview,
   LeaderboardRow,
   LedgerEntry,
@@ -12,6 +11,7 @@ import type {
   PersonalSummary,
   Profile,
   Quote,
+  RecentDaysResponse,
   SickResult,
 } from './types';
 
@@ -103,8 +103,14 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  adminGetDay: (day: string) =>
-    request<{ day: string; rows: DayStatusRow[] }>(`/admin/day/${day}`),
+  adminGetRecent: (params: { days?: number; before?: string; participationId?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.days) q.set('days', String(params.days));
+    if (params.before) q.set('before', params.before);
+    if (params.participationId) q.set('participationId', String(params.participationId));
+    const qs = q.toString();
+    return request<RecentDaysResponse>(`/admin/recent${qs ? `?${qs}` : ''}`);
+  },
   adminDayOverride: (data: {
     participationId: number;
     day: string;

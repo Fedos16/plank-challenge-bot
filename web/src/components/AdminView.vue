@@ -3,15 +3,26 @@ import { onMounted, ref } from 'vue';
 import { api } from '../api';
 import type {
   AdminChallenge,
-  DayStatusRow,
   DebtRow,
   DebtsOverview,
   LedgerEntry,
   Participant,
   PaymentEntry,
   Quote,
+  RecentDay,
+  RecentDayRow,
+  RecentParticipant,
 } from '../types';
-import { STATE_LABEL, formatDateRu, formatDateTimeRu, formatMoney, yesterdayISO } from '../helpers';
+import {
+  STATE_LABEL,
+  formatDateRu,
+  formatDateTimeRu,
+  formatDayTitleRu,
+  formatMoney,
+  formatTimeRu,
+  nextDayISO,
+  yesterdayISO,
+} from '../helpers';
 import { confirmAction, haptic } from '../telegram';
 
 type Sub = 'settings' | 'bank' | 'debts' | 'quotes' | 'people' | 'day' | 'report' | 'reset';
@@ -170,19 +181,89 @@ async function toggleAdmin(p: Participant) {
   }, 'Обновлено');
 }
 
-// ---- День ----
-const dayDate = ref(yesterdayISO());
-const dayRows = ref<DayStatusRow[]>([]);
-async function loadDay() {
-  await run(async () => {
-    dayRows.value = (await api.adminGetDay(dayDate.value)).rows;
-  }, 'Загружено');
+// ---- Корректировки: лента последних событий ----
+const PAGE_DAYS = 10;
+const recentDays = ref<RecentDay[]>([]);
+const recentParticipants = ref<RecentParticipant[]>([]);
+const recentFilter = ref(0); // 0 = все участники
+const recentHasMore = ref(false);
+const recentNextBefore = ref<string | null>(null);
+const recentLoading = ref(false);
+const recentLoaded = ref(false);
+const openRow = ref<string | null>(null);
+
+function rowKey(day: string, participationId: number) {
+  return `${day}|${participationId}`;
 }
-async function override(p: DayStatusRow, action: 'done' | 'missed' | 'sick' | 'clear' | 'fake') {
+function toggleRow(day: string, participationId: number) {
+  const key = rowKey(day, participationId);
+  openRow.value = openRow.value === key ? null : key;
+}
+
+/** Загрузка ленты: reset — с начала, иначе догружаем более ранние дни. */
+async function loadRecent(reset = true) {
+  if (recentLoading.value) return;
+  if (!reset && (!recentHasMore.value || !recentNextBefore.value)) return;
+  recentLoading.value = true;
+  try {
+    const res = await api.adminGetRecent({
+      days: PAGE_DAYS,
+      before: reset ? undefined : (recentNextBefore.value as string),
+      participationId: recentFilter.value || undefined,
+    });
+    recentDays.value = reset ? res.days : [...recentDays.value, ...res.days];
+    recentParticipants.value = res.participants;
+    recentHasMore.value = res.hasMore;
+    recentNextBefore.value = res.nextBefore;
+    recentLoaded.value = true;
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : 'Ошибка', false);
+  } finally {
+    recentLoading.value = false;
+  }
+}
+
+/** Перечитать один день после ручной правки, не трогая остальную ленту. */
+async function refreshDay(day: string) {
+  const res = await api.adminGetRecent({
+    days: 1,
+    before: nextDayISO(day),
+    participationId: recentFilter.value || undefined,
+  });
+  const fresh = res.days.find((d) => d.day === day);
+  const idx = recentDays.value.findIndex((d) => d.day === day);
+  if (fresh && idx >= 0) recentDays.value[idx] = fresh;
+  recentParticipants.value = res.participants;
+}
+
+function changeRecentFilter() {
+  openRow.value = null;
+  recentDays.value = [];
+  recentHasMore.value = false;
+  recentNextBefore.value = null;
+  void loadRecent(true);
+}
+
+async function override(
+  day: string,
+  p: RecentDayRow,
+  action: 'done' | 'missed' | 'sick' | 'clear' | 'fake',
+) {
   await run(async () => {
-    await api.adminDayOverride({ participationId: p.participationId, day: dayDate.value, action });
-    dayRows.value = (await api.adminGetDay(dayDate.value)).rows;
+    await api.adminDayOverride({ participationId: p.participationId, day, action });
+    await refreshDay(day);
   }, 'Применено');
+}
+
+function dayCounts(d: RecentDay) {
+  const counts = { done: 0, missed: 0, sick: 0, pending: 0 };
+  for (const r of d.rows) {
+    if (r.state === 'done') counts.done += 1;
+    else if (r.state === 'sick') counts.sick += 1;
+    else if (r.state === 'pending') counts.pending += 1;
+    else counts.missed += 1;
+  }
+  return counts;
 }
 
 // ---- Отчёт ----
@@ -250,6 +331,7 @@ function openSub(s: Sub) {
   if (s === 'debts') void loadDebts();
   if (s === 'quotes') void loadQuotes();
   if (s === 'people') void loadPeople();
+  if (s === 'day' && !recentLoaded.value) void loadRecent(true);
 }
 
 onMounted(loadSettings);
@@ -445,28 +527,78 @@ onMounted(loadSettings);
       </div>
     </div>
 
-    <!-- Корректировки -->
-    <div v-else-if="sub === 'day'" class="card">
-      <h3>Корректировки за день</h3>
-      <div class="muted" style="margin-bottom: 12px">
-        Ручная правка отметок за выбранный день, если бот что-то не засчитал автоматически.
-        Выбери дату, загрузи список и поставь нужный статус каждому: ✅ сделал, ❌ пропуск,
-        🤒 болел, «Сброс» — убрать отметку. Меняет серию, пропуски и банк.
+    <!-- Корректировки: лента последних событий -->
+    <div v-else-if="sub === 'day'">
+      <div class="card">
+        <h3>Последние события</h3>
+        <div class="muted" style="margin-bottom: 10px">
+          Свежие дни сверху. Нажми на участника, чтобы поправить отметку вручную:
+          ✅ сделал, ❌ пропуск, ⚠️ фейк, 🤒 болел, «Сброс» — убрать отметку.
+          Правка меняет серию, пропуски и банк.
+        </div>
+        <label class="field">
+          <span class="lbl">Участник</span>
+          <select v-model.number="recentFilter" @change="changeRecentFilter">
+            <option :value="0">Все участники</option>
+            <option v-for="p in recentParticipants" :key="p.participationId" :value="p.participationId">
+              {{ p.name }}{{ p.status === 'left' ? ' (вышел)' : '' }}
+            </option>
+          </select>
+        </label>
       </div>
-      <label class="field"><span class="lbl">Дата</span><input type="date" v-model="dayDate" /></label>
-      <button class="btn secondary" @click="loadDay">Загрузить</button>
-      <div v-for="p in dayRows" :key="p.participationId" class="list-item" style="margin-top: 8px">
-        <div class="grow">
-          <b>{{ p.name }}</b>
-          <span :class="`badge ${p.state}`" style="margin-left: 6px">{{ STATE_LABEL[p.state] }}</span>
-          <div class="inline-actions" style="margin-top: 6px">
-            <button class="btn small" @click="override(p, 'done')">✅ Засчитать</button>
-            <button class="btn small danger" @click="override(p, 'missed')">❌ Пропуск</button>
-            <button class="btn small danger" @click="override(p, 'fake')">⚠️ Фейк ×{{ settings?.fakeFineMultiplier ?? 2 }}</button>
-            <button class="btn small secondary" @click="override(p, 'sick')">🤒 Болел</button>
-            <button class="btn small secondary" @click="override(p, 'clear')">Сброс</button>
+
+      <div v-if="recentLoading && !recentDays.length" class="card muted">Загружаем…</div>
+      <div v-else-if="!recentDays.length" class="card muted">Событий пока нет.</div>
+
+      <div v-for="d in recentDays" :key="d.day" class="card day-card">
+        <div class="day-head">
+          <div>
+            <b>{{ formatDayTitleRu(d.day) }}</b>
+            <span class="muted"> · день {{ d.dayNumber }}</span>
+          </div>
+          <div class="muted day-counts">
+            ✅ {{ dayCounts(d).done }} · ❌ {{ dayCounts(d).missed }} · 🤒 {{ dayCounts(d).sick }}
+            <span v-if="dayCounts(d).pending"> · ⏳ {{ dayCounts(d).pending }}</span>
           </div>
         </div>
+
+        <div v-if="!d.rows.length" class="muted">Нет участников.</div>
+        <div
+          v-for="p in d.rows"
+          :key="p.participationId"
+          class="list-item day-row"
+          :class="{ open: openRow === rowKey(d.day, p.participationId) }"
+        >
+          <div class="grow">
+            <div class="day-row-head" @click="toggleRow(d.day, p.participationId)">
+              <div class="grow">
+                <b>{{ p.name }}</b>
+                <span v-if="p.status === 'left'" class="badge missed" style="margin-left: 6px">вышел</span>
+                <div class="muted">
+                  <span v-if="p.submittedAt">{{ formatTimeRu(p.submittedAt) }}</span>
+                  <span v-if="p.submittedAt && p.videoDuration"> · {{ p.videoDuration }} сек</span>
+                  <span v-if="p.fine">{{ p.submittedAt ? ' · ' : '' }}штраф {{ formatMoney(p.fine) }}</span>
+                  <span v-if="!p.submittedAt && !p.fine">—</span>
+                </div>
+              </div>
+              <span :class="`badge ${p.state}`">{{ STATE_LABEL[p.state] }}</span>
+            </div>
+            <div v-if="openRow === rowKey(d.day, p.participationId)" class="inline-actions" style="margin-top: 8px">
+              <button class="btn small" @click="override(d.day, p, 'done')">✅ Засчитать</button>
+              <button class="btn small danger" @click="override(d.day, p, 'missed')">❌ Пропуск</button>
+              <button class="btn small danger" @click="override(d.day, p, 'fake')">⚠️ Фейк ×{{ settings?.fakeFineMultiplier ?? 2 }}</button>
+              <button class="btn small secondary" @click="override(d.day, p, 'sick')">🤒 Болел</button>
+              <button class="btn small secondary" @click="override(d.day, p, 'clear')">Сброс</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="recentDays.length" class="card" style="text-align: center">
+        <button v-if="recentHasMore" class="btn secondary" :disabled="recentLoading" @click="loadRecent(false)">
+          {{ recentLoading ? 'Загружаем…' : `Показать ещё ${PAGE_DAYS} дней` }}
+        </button>
+        <div v-else class="muted">Это начало челленджа.</div>
       </div>
     </div>
 
@@ -556,6 +688,36 @@ onMounted(loadSettings);
 }
 .debt-zero {
   color: #30a46c;
+}
+.day-card {
+  padding-top: 10px;
+}
+.day-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+  margin-bottom: 4px;
+}
+.day-counts {
+  white-space: nowrap;
+}
+.day-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.day-row.open {
+  background: rgba(128, 128, 128, 0.06);
+  border-radius: 10px;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
 }
 .reset-row {
   display: flex;

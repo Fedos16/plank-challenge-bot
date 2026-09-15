@@ -157,8 +157,33 @@ export interface Participant {
   maxStreak: number;
 }
 
-export interface DayStatusRow {
+export interface RecentDayRow {
   participationId: number;
   name: string;
+  status: string;
   state: DayState;
+  submittedAt: string | null;
+  videoDuration: number | null;
+  fine: number;
+}
+
+export interface RecentDay {
+  day: string;
+  dayNumber: number;
+  rows: RecentDayRow[];
+}
+
+export interface RecentParticipant {
+  participationId: number;
+  name: string;
+  status: string;
+}
+
+export interface RecentDaysResponse {
+  days: RecentDay[];
+  from: string | null;
+  to: string | null;
+  hasMore: boolean;
+  nextBefore: string | null;
+  participants: RecentParticipant[];
 }

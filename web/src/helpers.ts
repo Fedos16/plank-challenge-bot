@@ -38,6 +38,32 @@ export function initials(name: string): string {
   return (first + second).toUpperCase() || '🙂';
 }
 
+/** YYYY-MM-DD → «пн, 15.09.2026» */
+export function formatDayTitleRu(iso: string): string {
+  if (!iso) return '';
+  const dt = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return iso;
+  const weekday = dt.toLocaleDateString('ru-RU', { weekday: 'short' });
+  return `${weekday}, ${formatDateRu(iso)}`;
+}
+
+/** ISO-дата-время → ЧЧ:ММ */
+export function formatTimeRu(iso: string): string {
+  if (!iso) return '';
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
+/** YYYY-MM-DD → следующий день */
+export function nextDayISO(iso: string): string {
+  const dt = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime())) return iso;
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+
 export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }

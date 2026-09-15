@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma';
 import { dateToDay, dayToDate, yesterdayDay } from '../lib/time';
 import { addAdjustment, addPayment, addSpend, getBank, removePayment } from '../services/bank';
 import { getDebtsOverview } from '../services/debts';
-import { getDayStatuses } from '../services/dayStatus';
+import { getRecentDays } from '../services/recentDays';
 import { applyDayOverride, type OverrideAction } from '../services/manual';
 import { sendDailyReport } from '../services/report';
 import { displayName } from '../services/users';
@@ -249,21 +249,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  // ---- Статусы за день + ручные правки ----
-  app.get('/day/:day', async (req, reply) => {
+  // ---- Лента последних событий + ручные правки ----
+  app.get('/recent', async (req, reply) => {
     const ch = requireChallenge(req);
     if (!ch) return reply.code(404).send({ error: 'no_active_challenge' });
-    const day = (req.params as { day: string }).day;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return reply.code(400).send({ error: 'bad_day' });
-    const statuses = await getDayStatuses(ch, day);
-    return {
-      day,
-      rows: statuses.map((s) => ({
-        participationId: s.participation.id,
-        name: displayName(s.user),
-        state: s.state,
-      })),
-    };
+    const q = (req.query ?? {}) as { days?: string; before?: string; participationId?: string };
+
+    if (q.before !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(q.before)) {
+      return reply.code(400).send({ error: 'bad_before' });
+    }
+    const days = q.days !== undefined && !Number.isNaN(Number(q.days)) ? Number(q.days) : undefined;
+    const participationId =
+      q.participationId && !Number.isNaN(Number(q.participationId))
+        ? Number(q.participationId)
+        : undefined;
+
+    return getRecentDays(ch, { days, before: q.before, participationId });
   });
 
   app.post('/day-override', async (req, reply) => {
