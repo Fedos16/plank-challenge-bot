@@ -241,7 +241,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const participation = await prisma.participation.findUnique({ where: { id } });
     if (!participation) return reply.code(404).send({ error: 'not_found' });
     if (body.status === 'active' || body.status === 'left') {
-      await prisma.participation.update({ where: { id }, data: { status: body.status } });
+      await prisma.participation.update({
+        where: { id },
+        data: {
+          status: body.status,
+          // дата выхода нужна ленте событий, чтобы не рисовать пропуски после выхода
+          leftAt: body.status === 'left' ? new Date() : null,
+        },
+      });
     }
     if (typeof body.isAdmin === 'boolean') {
       await prisma.user.update({ where: { id: participation.userId }, data: { isAdmin: body.isAdmin } });

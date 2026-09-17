@@ -55,11 +55,12 @@ model Challenge {
 
 // Участие пользователя в челлендже («подтверждение участия»)
 model Participation {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   challengeId Int
   userId      Int
-  status      String   @default("active") // active | left
-  joinedAt    DateTime @default(now())
+  status      String    @default("active") // active | left
+  joinedAt    DateTime  @default(now())
+  leftAt      DateTime? // когда участника исключили (null, пока он в челлендже)
 
   challenge   Challenge     @relation(fields: [challengeId], references: [id], onDelete: Cascade)
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)

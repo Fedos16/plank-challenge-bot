@@ -66,7 +66,7 @@ export async function ensureParticipation(
     if (existing.status !== 'active') {
       return prisma.participation.update({
         where: { id: existing.id },
-        data: { status: 'active' },
+        data: { status: 'active', leftAt: null },
       });
     }
     return existing;

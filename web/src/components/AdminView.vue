@@ -183,6 +183,8 @@ async function toggleAdmin(p: Participant) {
 
 // ---- Корректировки: лента последних событий ----
 const PAGE_DAYS = 10;
+// сколько пустых окон подряд пролистываем за один «показать ещё»
+const MAX_EMPTY_PAGES = 6;
 const recentDays = ref<RecentDay[]>([]);
 const recentParticipants = ref<RecentParticipant[]>([]);
 const recentFilter = ref(0); // 0 = все участники
@@ -200,21 +202,32 @@ function toggleRow(day: string, participationId: number) {
   openRow.value = openRow.value === key ? null : key;
 }
 
-/** Загрузка ленты: reset — с начала, иначе догружаем более ранние дни. */
+/**
+ * Загрузка ленты: reset — с начала, иначе догружаем более ранние дни.
+ * Пустые окна (участник тогда ещё не вступил / уже вышел) пролистываем сами,
+ * чтобы не заставлять жать «показать ещё» по пустым страницам.
+ */
 async function loadRecent(reset = true) {
   if (recentLoading.value) return;
   if (!reset && (!recentHasMore.value || !recentNextBefore.value)) return;
   recentLoading.value = true;
   try {
-    const res = await api.adminGetRecent({
-      days: PAGE_DAYS,
-      before: reset ? undefined : (recentNextBefore.value as string),
-      participationId: recentFilter.value || undefined,
-    });
-    recentDays.value = reset ? res.days : [...recentDays.value, ...res.days];
-    recentParticipants.value = res.participants;
-    recentHasMore.value = res.hasMore;
-    recentNextBefore.value = res.nextBefore;
+    let before = reset ? undefined : (recentNextBefore.value as string);
+    let added: RecentDay[] = [];
+    for (let i = 0; i < MAX_EMPTY_PAGES && !added.length; i += 1) {
+      const res = await api.adminGetRecent({
+        days: PAGE_DAYS,
+        before,
+        participationId: recentFilter.value || undefined,
+      });
+      added = res.days;
+      recentParticipants.value = res.participants;
+      recentHasMore.value = res.hasMore;
+      recentNextBefore.value = res.nextBefore;
+      before = res.nextBefore ?? undefined;
+      if (!res.hasMore) break;
+    }
+    recentDays.value = reset ? added : [...recentDays.value, ...added];
     recentLoaded.value = true;
   } catch (e) {
     showToast(e instanceof Error ? e.message : 'Ошибка', false);
@@ -232,7 +245,10 @@ async function refreshDay(day: string) {
   });
   const fresh = res.days.find((d) => d.day === day);
   const idx = recentDays.value.findIndex((d) => d.day === day);
-  if (fresh && idx >= 0) recentDays.value[idx] = fresh;
+  if (idx >= 0) {
+    if (fresh) recentDays.value[idx] = fresh;
+    else recentDays.value.splice(idx, 1); // в этом дне показывать стало нечего
+  }
   recentParticipants.value = res.participants;
 }
 
@@ -548,7 +564,9 @@ onMounted(loadSettings);
       </div>
 
       <div v-if="recentLoading && !recentDays.length" class="card muted">Загружаем…</div>
-      <div v-else-if="!recentDays.length" class="card muted">Событий пока нет.</div>
+      <div v-else-if="!recentDays.length" class="card muted">
+        {{ recentFilter ? 'За эти дни у участника событий нет.' : 'Событий пока нет.' }}
+      </div>
 
       <div v-for="d in recentDays" :key="d.day" class="card day-card">
         <div class="day-head">
@@ -573,7 +591,8 @@ onMounted(loadSettings);
             <div class="day-row-head" @click="toggleRow(d.day, p.participationId)">
               <div class="grow">
                 <b>{{ p.name }}</b>
-                <span v-if="p.status === 'left'" class="badge missed" style="margin-left: 6px">вышел</span>
+                <span v-if="p.joined" class="badge done" style="margin-left: 6px">вступил</span>
+                <span v-if="p.left" class="badge missed" style="margin-left: 6px">вышел</span>
                 <div class="muted">
                   <span v-if="p.submittedAt">{{ formatTimeRu(p.submittedAt) }}</span>
                   <span v-if="p.submittedAt && p.videoDuration"> · {{ p.videoDuration }} сек</span>
@@ -594,7 +613,7 @@ onMounted(loadSettings);
         </div>
       </div>
 
-      <div v-if="recentDays.length" class="card" style="text-align: center">
+      <div v-if="recentLoaded" class="card" style="text-align: center">
         <button v-if="recentHasMore" class="btn secondary" :disabled="recentLoading" @click="loadRecent(false)">
           {{ recentLoading ? 'Загружаем…' : `Показать ещё ${PAGE_DAYS} дней` }}
         </button>

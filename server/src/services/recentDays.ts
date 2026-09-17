@@ -1,6 +1,7 @@
 import type { Challenge } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import {
+  challengeDay,
   challengeDayNumber,
   dateToDay,
   dayRange,
@@ -21,6 +22,8 @@ export interface RecentDayRow {
   submittedAt: Date | null;
   videoDuration: number | null;
   fine: number; // начисленный за этот день штраф, ₽
+  joined: boolean; // в этот день участник вступил
+  left: boolean; // в этот день участник вышел
 }
 
 export interface RecentDay {
@@ -150,6 +153,18 @@ export async function getRecentDays(
     fineByKey.set(k, (fineByKey.get(k) ?? 0) + f.amount);
   }
 
+  // Границы участия: до вступления и после выхода участника в ленте быть не должно.
+  const window = new Map(
+    filtered.map((p) => [
+      p.id,
+      {
+        joinDay: challengeDay(p.joinedAt, challenge.timezone),
+        leftDay: p.leftAt ? challengeDay(p.leftAt, challenge.timezone) : null,
+        active: p.status === 'active',
+      },
+    ]),
+  );
+
   const days: RecentDay[] = dayRange(from, to)
     .reverse()
     .map((day) => {
@@ -158,9 +173,15 @@ export async function getRecentDays(
         const k = key(p.id, day);
         const sub = subByKey.get(k);
         const sick = sickByKey.has(k);
-        // Вышедших участников показываем только в те дни, где у них есть отметка,
-        // иначе лента заполняется их «пропусками» задним числом.
-        if (p.status !== 'active' && !sub && !sick) continue;
+        const fine = fineByKey.get(k) ?? 0;
+        const w = window.get(p.id)!;
+        const hasRecord = Boolean(sub) || sick || fine !== 0;
+        // День показываем, если в нём что-то есть или участник в этот день
+        // числился в челлендже. У старых выходов (до появления leftAt) дата
+        // выхода неизвестна — тогда остаются только дни с отметками.
+        const inChallenge =
+          day >= w.joinDay && (w.leftDay ? day <= w.leftDay : w.active);
+        if (!hasRecord && !inChallenge) continue;
         let state: DayState;
         if (sub) state = mapSubmissionStatus(sub.status);
         else if (sick) state = 'sick';
@@ -173,11 +194,15 @@ export async function getRecentDays(
           state,
           submittedAt: sub?.submittedAt ?? null,
           videoDuration: sub?.videoDuration ?? null,
-          fine: fineByKey.get(k) ?? 0,
+          fine,
+          joined: day === w.joinDay,
+          left: day === w.leftDay,
         });
       }
       return { day, dayNumber: challengeDayNumber(startDay, day), rows };
-    });
+    })
+    // Дни, в которых участнику (или всем сразу) нечего показать, пропускаем.
+    .filter((d) => d.rows.length > 0);
 
   return {
     days,

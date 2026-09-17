@@ -165,6 +165,8 @@ export interface RecentDayRow {
   submittedAt: string | null;
   videoDuration: number | null;
   fine: number;
+  joined: boolean;
+  left: boolean;
 }
 
 export interface RecentDay {
