@@ -20,7 +20,8 @@ import {
   formatDayTitleRu,
   formatMoney,
   formatTimeRu,
-  nextDayISO,
+  daysBetweenISO,
+  todayISO,
   yesterdayISO,
 } from '../helpers';
 import { confirmAction, haptic } from '../telegram';
@@ -190,6 +191,7 @@ const recentParticipants = ref<RecentParticipant[]>([]);
 const recentFilter = ref(0); // 0 = все участники
 const recentHasMore = ref(false);
 const recentNextBefore = ref<string | null>(null);
+const recentFrom = ref<string | null>(null); // самый ранний загруженный день
 const recentLoading = ref(false);
 const recentLoaded = ref(false);
 const openRow = ref<string | null>(null);
@@ -224,6 +226,7 @@ async function loadRecent(reset = true) {
       recentParticipants.value = res.participants;
       recentHasMore.value = res.hasMore;
       recentNextBefore.value = res.nextBefore;
+      recentFrom.value = res.from;
       before = res.nextBefore ?? undefined;
       if (!res.hasMore) break;
     }
@@ -236,20 +239,21 @@ async function loadRecent(reset = true) {
   }
 }
 
-/** Перечитать один день после ручной правки, не трогая остальную ленту. */
-async function refreshDay(day: string) {
+/**
+ * Перечитать всё загруженное окно после ручной правки: штраф за один день
+ * сдвигает накопительный итог всех последующих дней.
+ */
+async function refreshLoaded() {
+  const span = recentFrom.value ? daysBetweenISO(recentFrom.value, todayISO()) + 2 : PAGE_DAYS;
   const res = await api.adminGetRecent({
-    days: 1,
-    before: nextDayISO(day),
+    days: span,
     participationId: recentFilter.value || undefined,
   });
-  const fresh = res.days.find((d) => d.day === day);
-  const idx = recentDays.value.findIndex((d) => d.day === day);
-  if (idx >= 0) {
-    if (fresh) recentDays.value[idx] = fresh;
-    else recentDays.value.splice(idx, 1); // в этом дне показывать стало нечего
-  }
+  recentDays.value = res.days;
   recentParticipants.value = res.participants;
+  recentHasMore.value = res.hasMore;
+  recentNextBefore.value = res.nextBefore;
+  recentFrom.value = res.from;
 }
 
 function changeRecentFilter() {
@@ -257,6 +261,7 @@ function changeRecentFilter() {
   recentDays.value = [];
   recentHasMore.value = false;
   recentNextBefore.value = null;
+  recentFrom.value = null;
   void loadRecent(true);
 }
 
@@ -267,7 +272,7 @@ async function override(
 ) {
   await run(async () => {
     await api.adminDayOverride({ participationId: p.participationId, day, action });
-    await refreshDay(day);
+    await refreshLoaded();
   }, 'Применено');
 }
 
@@ -596,7 +601,10 @@ onMounted(loadSettings);
                 <div class="muted">
                   <span v-if="p.submittedAt">{{ formatTimeRu(p.submittedAt) }}</span>
                   <span v-if="p.submittedAt && p.videoDuration"> · {{ p.videoDuration }} сек</span>
-                  <span v-if="p.fine">{{ p.submittedAt ? ' · ' : '' }}штраф {{ formatMoney(p.fine) }}</span>
+                  <span v-if="p.fine">
+                    {{ p.submittedAt ? ' · ' : '' }}штраф {{ formatMoney(p.fine) }} · всего
+                    {{ formatMoney(p.finesTotal) }}
+                  </span>
                   <span v-if="!p.submittedAt && !p.fine">—</span>
                 </div>
               </div>

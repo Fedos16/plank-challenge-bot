@@ -22,6 +22,7 @@ export interface RecentDayRow {
   submittedAt: Date | null;
   videoDuration: number | null;
   fine: number; // начисленный за этот день штраф, ₽
+  finesTotal: number; // все штрафы участника накопленным итогом на конец этого дня, ₽
   joined: boolean; // в этот день участник вступил
   left: boolean; // в этот день участник вышел
 }
@@ -52,7 +53,7 @@ export interface RecentDaysResult {
   participants: { participationId: number; name: string; status: string }[];
 }
 
-const MAX_DAYS = 60;
+const MAX_DAYS = 200;
 
 function mapSubmissionStatus(status: string): DayState {
   switch (status) {
@@ -137,7 +138,7 @@ export async function getRecentDays(
         challengeId: challenge.id,
         participationId: { in: partIds },
         type: { in: ['miss', 'fake'] },
-        day: dayFilter,
+        day: { lte: dayToDate(to) },
       },
       select: { participationId: true, day: true, amount: true },
     }),
@@ -147,10 +148,28 @@ export async function getRecentDays(
   const subByKey = new Map(submissions.map((s) => [key(s.participationId, dateToDay(s.day)), s]));
   const sickByKey = new Set(sickDays.map((s) => key(s.participationId, dateToDay(s.day))));
   const fineByKey = new Map<string, number>();
+  // Штрафы до начала окна: с них начинается накопительный итог участника.
+  const finesBefore = new Map<number, number>();
   for (const f of fines) {
     if (!f.participationId || !f.day) continue;
-    const k = key(f.participationId, dateToDay(f.day));
+    const day = dateToDay(f.day);
+    if (day < from) {
+      finesBefore.set(f.participationId, (finesBefore.get(f.participationId) ?? 0) + f.amount);
+      continue;
+    }
+    const k = key(f.participationId, day);
     fineByKey.set(k, (fineByKey.get(k) ?? 0) + f.amount);
+  }
+
+  // Накопительный итог штрафов на конец каждого дня окна (считаем по возрастанию дней).
+  const finesTotalByKey = new Map<string, number>();
+  const running = new Map(filtered.map((p) => [p.id, finesBefore.get(p.id) ?? 0]));
+  for (const day of dayRange(from, to)) {
+    for (const p of filtered) {
+      const total = (running.get(p.id) ?? 0) + (fineByKey.get(key(p.id, day)) ?? 0);
+      running.set(p.id, total);
+      finesTotalByKey.set(key(p.id, day), total);
+    }
   }
 
   // Границы участия: до вступления и после выхода участника в ленте быть не должно.
@@ -195,6 +214,7 @@ export async function getRecentDays(
           submittedAt: sub?.submittedAt ?? null,
           videoDuration: sub?.videoDuration ?? null,
           fine,
+          finesTotal: finesTotalByKey.get(k) ?? 0,
           joined: day === w.joinDay,
           left: day === w.leftDay,
         });

@@ -56,12 +56,12 @@ export function formatTimeRu(iso: string): string {
   return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
 
-/** YYYY-MM-DD → следующий день */
-export function nextDayISO(iso: string): string {
-  const dt = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(dt.getTime())) return iso;
-  dt.setUTCDate(dt.getUTCDate() + 1);
-  return dt.toISOString().slice(0, 10);
+/** Сколько дней между двумя YYYY-MM-DD (from ≤ to) */
+export function daysBetweenISO(from: string, to: string): number {
+  const a = new Date(`${from}T00:00:00Z`).getTime();
+  const b = new Date(`${to}T00:00:00Z`).getTime();
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  return Math.max(0, Math.round((b - a) / 86400000));
 }
 
 export function todayISO(): string {
