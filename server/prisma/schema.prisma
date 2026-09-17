@@ -62,13 +62,30 @@ model Participation {
   joinedAt    DateTime  @default(now())
   leftAt      DateTime? // когда участника исключили (null, пока он в челлендже)
 
-  challenge   Challenge     @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  submissions Submission[]
-  sickDays    SickDay[]
-  ledger      LedgerEntry[]
+  challenge         Challenge          @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissions       Submission[]
+  sickDays          SickDay[]
+  ledger            LedgerEntry[]
+  notificationPrefs NotificationPref[]
 
   @@unique([challengeId, userId])
+}
+
+// Личные настройки уведомлений участника. Пустое поле = «как у челленджа»,
+// заданное — перебивает настройку админа.
+model NotificationPref {
+  id              Int       @id @default(autoincrement())
+  participationId Int
+  type            String // daily_reminder
+  enabled         Boolean? // null = как у челленджа (dmReminders)
+  timeHHmm        String? // HH:mm, только :00 и :30; null = как у челленджа (reminderTime)
+  lastSentDay     DateTime? @db.Date // защита от повторной отправки в тот же день
+  updatedAt       DateTime  @updatedAt
+
+  participation Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+
+  @@unique([participationId, type])
 }
 
 // Подтверждение планки (видео-кружок)

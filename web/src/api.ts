@@ -6,6 +6,7 @@ import type {
   LeaderboardRow,
   LedgerEntry,
   MyChallengesResponse,
+  NotificationSettings,
   Participant,
   PersonalDetail,
   PersonalSummary,
@@ -60,6 +61,17 @@ export const api = {
     request<{ ok: boolean }>(`/personal/${id}`, { method: 'DELETE' }),
 
   // --- админские ---
+  getNotifications: (challengeId: number) =>
+    request<NotificationSettings>(`/challenges/${challengeId}/notifications`),
+  updateNotification: (
+    challengeId: number,
+    data: { type: string; enabled?: boolean | null; time?: string | null },
+  ) =>
+    request<NotificationSettings>(`/challenges/${challengeId}/notifications`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
   adminGetChallenge: () => request<AdminChallenge>('/admin/challenge'),
   adminUpdateChallenge: (data: Partial<AdminChallenge>) =>
     request<AdminChallenge>('/admin/challenge', { method: 'PATCH', body: JSON.stringify(data) }),

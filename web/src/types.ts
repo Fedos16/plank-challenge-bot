@@ -190,3 +190,20 @@ export interface RecentDaysResponse {
   nextBefore: string | null;
   participants: RecentParticipant[];
 }
+
+export interface NotificationSetting {
+  type: string;
+  title: string;
+  description: string;
+  enabled: boolean | null;
+  time: string | null;
+  effectiveEnabled: boolean;
+  effectiveTime: string;
+  defaultEnabled: boolean;
+  defaultTime: string;
+}
+
+export interface NotificationSettings {
+  slots: string[];
+  settings: NotificationSetting[];
+}

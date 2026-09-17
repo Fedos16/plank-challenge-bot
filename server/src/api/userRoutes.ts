@@ -3,6 +3,12 @@ import type { Challenge, Participation } from '@prisma/client';
 import { authPreHandler } from './auth';
 import { getBank } from '../services/bank';
 import { getProfile } from '../services/profile';
+import {
+  NOTIFICATION_TYPES,
+  getNotificationSettings,
+  updateNotificationSetting,
+  type NotificationType,
+} from '../services/notifications';
 import { getLeaderboard } from '../services/leaderboard';
 import { getMyChallenges } from '../services/myChallenges';
 import {
@@ -114,6 +120,41 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       day: result.day,
       sickDeadline: r.challenge.sickDeadline,
     };
+  });
+
+  // ---- Личные уведомления в ЛС ----
+  app.get('/challenges/:id/notifications', async (req, reply) => {
+    const r = await resolve(req, reply);
+    if (!r) return;
+    return getNotificationSettings(r.challenge, r.participation.id);
+  });
+
+  app.patch('/challenges/:id/notifications', async (req, reply) => {
+    const r = await resolve(req, reply);
+    if (!r) return;
+    const body = (req.body ?? {}) as {
+      type?: string;
+      enabled?: boolean | null;
+      time?: string | null;
+    };
+    if (!NOTIFICATION_TYPES.includes(body.type as NotificationType)) {
+      return reply.code(400).send({ error: 'bad_type' });
+    }
+    if (body.enabled !== undefined && body.enabled !== null && typeof body.enabled !== 'boolean') {
+      return reply.code(400).send({ error: 'bad_enabled' });
+    }
+    if (body.time !== undefined && body.time !== null && typeof body.time !== 'string') {
+      return reply.code(400).send({ error: 'bad_time' });
+    }
+    try {
+      await updateNotificationSetting(r.challenge, r.participation.id, body.type as NotificationType, {
+        enabled: body.enabled,
+        time: body.time,
+      });
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : 'bad_request' });
+    }
+    return getNotificationSettings(r.challenge, r.participation.id);
   });
 
   // ---- Личные челленджи (только владелец) ----

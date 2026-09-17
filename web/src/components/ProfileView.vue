@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import type { ChallengePublic, Profile } from '../types';
 import { STATE_LABEL, formatMoney, initials } from '../helpers';
+import NotificationsCard from './NotificationsCard.vue';
 
 const props = defineProps<{ profile: Profile; challenge: ChallengePublic; sickBusy?: boolean }>();
 defineEmits<{ (e: 'report-sick'): void }>();
@@ -71,6 +72,8 @@ const canReportSick = computed(() => props.profile.todayState === 'pending');
       <span>💰 Общий банк</span>
       <span class="v">{{ formatMoney(challenge.bank) }}</span>
     </div>
+
+    <NotificationsCard :challenge-id="challenge.id" />
 
     <div class="card">
       <div class="muted">

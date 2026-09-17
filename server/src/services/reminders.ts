@@ -1,6 +1,7 @@
 import type { Challenge } from '@prisma/client';
 import { todayDay } from '../lib/time';
 import { getDayStatuses } from './dayStatus';
+import type { ReminderTarget } from './notifications';
 import { displayName } from './users';
 import { escapeHtml } from './report';
 
@@ -46,20 +47,24 @@ export async function sendDailyReminder(challenge: Challenge): Promise<boolean> 
 }
 
 /**
- * Личные напоминания в ЛС тем, кто сегодня ещё не сделал планку.
- * Кому бот не может написать (не нажали /start) — пропускаем. Возвращает число отправленных.
+ * Личные напоминания в ЛС тем из `targets`, кто сегодня ещё не сделал планку.
+ * Кому бот не может написать (не нажали /start) — пропускаем.
+ * Возвращает id участий, которым сообщение действительно ушло.
  */
 export async function sendPersonalReminders(
   challenge: Challenge,
+  targets: ReminderTarget[],
   opts: { lastChance?: boolean } = {},
-): Promise<number> {
+): Promise<number[]> {
+  if (targets.length === 0) return [];
   const day = todayDay(challenge.timezone);
   const statuses = await getDayStatuses(challenge, day);
-  const pending = statuses.filter((s) => s.state === 'pending');
-  if (pending.length === 0) return 0;
+  const wanted = new Set(targets.map((t) => t.participation.id));
+  const pending = statuses.filter((s) => s.state === 'pending' && wanted.has(s.participation.id));
+  if (pending.length === 0) return [];
 
   const { bot } = await import('../bot/bot');
-  if (!bot) return 0;
+  if (!bot) return [];
   let username: string | undefined;
   try {
     username = bot.botInfo.username;
@@ -69,7 +74,7 @@ export async function sendPersonalReminders(
   const { appLaunchKeyboard } = await import('../bot/keyboards');
   const keyboard = username ? appLaunchKeyboard(username) : undefined;
 
-  let sent = 0;
+  const sent: number[] = [];
   for (const s of pending) {
     const name = escapeHtml(displayName(s.user));
     const text = opts.lastChance
@@ -88,7 +93,7 @@ export async function sendPersonalReminders(
         parse_mode: 'HTML',
         reply_markup: keyboard,
       });
-      sent++;
+      sent.push(s.participation.id);
     } catch {
       // пользователь не начинал диалог с ботом — пропускаем
     }
