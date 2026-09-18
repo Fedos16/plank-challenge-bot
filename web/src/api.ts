@@ -3,6 +3,7 @@ import type {
   AdminChallenge,
   ChallengePublic,
   DebtsOverview,
+  FreezeOverview,
   LeaderboardRow,
   LedgerEntry,
   MyChallengesResponse,
@@ -17,6 +18,26 @@ import type {
 } from './types';
 
 const DEV_ID = import.meta.env.VITE_DEV_TELEGRAM_ID as string | undefined;
+
+/** Ошибка API с кодом из тела ответа (`{ "error": "..." }`), если он там был. */
+export class ApiError extends Error {
+  status: number;
+  code: string | null;
+
+  constructor(status: number, text: string) {
+    let code: string | null = null;
+    try {
+      const parsed = JSON.parse(text) as { error?: unknown };
+      if (typeof parsed.error === 'string') code = parsed.error;
+    } catch {
+      /* тело не JSON — оставляем как есть */
+    }
+    super(`HTTP ${status}: ${code ?? text}`);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
@@ -35,7 +56,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, { ...options, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${text}`);
+    throw new ApiError(res.status, text);
   }
   return (await res.json()) as T;
 }
@@ -47,6 +68,14 @@ export const api = {
   getMe: (id: number) => request<Profile>(`/challenges/${id}/me`),
   getLeaderboard: (id: number) => request<{ rows: LeaderboardRow[] }>(`/challenges/${id}/leaderboard`),
   reportSick: (id: number) => request<SickResult>(`/challenges/${id}/sick`, { method: 'POST' }),
+
+  // --- заморозки серии (только личный кабинет) ---
+  getFreezes: (id: number) => request<FreezeOverview>(`/challenges/${id}/freezes`),
+  useFreeze: (id: number, day: string) =>
+    request<{ ok: boolean; day: string; earnedDay: string; freezes: FreezeOverview }>(
+      `/challenges/${id}/freezes`,
+      { method: 'POST', body: JSON.stringify({ day }) },
+    ),
 
   // --- личные челленджи ---
   getPersonal: () => request<{ challenges: PersonalSummary[] }>('/personal'),

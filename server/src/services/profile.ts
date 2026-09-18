@@ -4,6 +4,7 @@ import { challengeDayNumber, dateToDay, todayDay } from '../lib/time';
 import { getParticipationStreaks } from './streaks';
 import { getParticipantDayState } from './dayStatus';
 import { getParticipantFines } from './bank';
+import { getFreezeState } from './freezes';
 import { displayName } from './users';
 
 export interface ProfileDTO {
@@ -28,6 +29,16 @@ export interface ProfileDTO {
     sick: number;
     finesTotal: number;
   };
+  freezes: {
+    enabled: boolean;
+    available: number; // доступно сейчас
+    used: number; // использовано за всё время
+    earned: number; // заработано за всё время
+    max: number; // лимит на руках
+    everyDays: number; // за сколько дней подряд даётся заморозка
+    daysToNext: number | null; // сколько дней подряд до следующей
+    canUse: boolean; // есть что потратить и есть на какой день
+  };
 }
 
 export async function getProfile(
@@ -36,7 +47,7 @@ export async function getProfile(
   user: User,
 ): Promise<ProfileDTO> {
   const today = todayDay(challenge.timezone);
-  const [streaks, todayState, doneCount, lateCount, sickCount, finesTotal, fineDays] =
+  const [streaks, todayState, doneCount, lateCount, sickCount, finesTotal, fineDays, freezes] =
     await Promise.all([
       getParticipationStreaks(challenge, participation),
       getParticipantDayState(challenge, participation.id, today),
@@ -47,6 +58,7 @@ export async function getProfile(
       prisma.ledgerEntry.count({
         where: { participationId: participation.id, type: { in: ['miss', 'fake'] } },
       }),
+      getFreezeState(challenge, participation),
     ]);
 
   return {
@@ -70,6 +82,16 @@ export async function getProfile(
       missed: fineDays,
       sick: sickCount,
       finesTotal,
+    },
+    freezes: {
+      enabled: freezes.enabled,
+      available: freezes.available,
+      used: freezes.used,
+      earned: freezes.earned,
+      max: freezes.max,
+      everyDays: freezes.everyDays,
+      daysToNext: freezes.daysToNext,
+      canUse: freezes.available > 0,
     },
   };
 }

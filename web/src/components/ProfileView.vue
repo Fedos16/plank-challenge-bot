@@ -3,9 +3,10 @@ import { computed } from 'vue';
 import type { ChallengePublic, Profile } from '../types';
 import { STATE_LABEL, formatMoney, initials } from '../helpers';
 import NotificationsCard from './NotificationsCard.vue';
+import FreezesCard from './FreezesCard.vue';
 
 const props = defineProps<{ profile: Profile; challenge: ChallengePublic; sickBusy?: boolean }>();
-defineEmits<{ (e: 'report-sick'): void }>();
+defineEmits<{ (e: 'report-sick'): void; (e: 'refresh'): void }>();
 
 const canReportSick = computed(() => props.profile.todayState === 'pending');
 </script>
@@ -24,6 +25,10 @@ const canReportSick = computed(() => props.profile.todayState === 'pending');
     <div class="streak-hero">
       <div class="num">🔥 {{ profile.streak.current }}</div>
       <div class="lbl">текущая серия (рекорд: {{ profile.streak.max }})</div>
+      <div v-if="profile.freezes.enabled" class="lbl">
+        ❄️ заморозок: {{ profile.freezes.available }} доступно · {{ profile.freezes.used }}
+        использовано
+      </div>
     </div>
 
     <div class="card">
@@ -66,12 +71,24 @@ const canReportSick = computed(() => props.profile.todayState === 'pending');
         <div class="v">{{ formatMoney(profile.totals.finesTotal) }}</div>
         <div class="k">Мои штрафы</div>
       </div>
+      <template v-if="profile.freezes.enabled">
+        <div class="stat">
+          <div class="v">❄️ {{ profile.freezes.available }}</div>
+          <div class="k">Заморозок доступно</div>
+        </div>
+        <div class="stat">
+          <div class="v">{{ profile.freezes.used }}</div>
+          <div class="k">Заморозок использовано</div>
+        </div>
+      </template>
     </div>
 
     <div class="bank-chip" style="margin-top: 12px">
       <span>💰 Общий банк</span>
       <span class="v">{{ formatMoney(challenge.bank) }}</span>
     </div>
+
+    <FreezesCard :challenge-id="challenge.id" @used="$emit('refresh')" />
 
     <NotificationsCard :challenge-id="challenge.id" />
 

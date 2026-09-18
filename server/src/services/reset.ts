@@ -6,12 +6,13 @@ export async function resetLedger(challengeId: number): Promise<number> {
   return r.count;
 }
 
-/** Удалить всех участников челленджа вместе с их подтверждениями, болезнями и штрафами. */
+/** Удалить всех участников челленджа вместе с их подтверждениями, болезнями, заморозками и штрафами. */
 export async function resetParticipants(challengeId: number): Promise<number> {
   return prisma.$transaction(async (tx) => {
     await tx.ledgerEntry.deleteMany({ where: { challengeId, participationId: { not: null } } });
     await tx.submission.deleteMany({ where: { challengeId } });
     await tx.sickDay.deleteMany({ where: { challengeId } });
+    await tx.streakFreeze.deleteMany({ where: { challengeId } });
     const r = await tx.participation.deleteMany({ where: { challengeId } });
     // удаляем пользователей, не оставшихся ни в одном челлендже
     await tx.user.deleteMany({ where: { participations: { none: {} } } });
@@ -25,7 +26,7 @@ export async function unbindChat(challengeId: number): Promise<void> {
 }
 
 /**
- * Полный сброс данных челленджа: участники, подтверждения, болезни, штрафы/банк, отчёты.
+ * Полный сброс данных челленджа: участники, подтверждения, болезни, заморозки, штрафы/банк, отчёты.
  * Настройки челленджа, привязка чата и мотивационные речи сохраняются.
  */
 export async function resetAllData(challengeId: number): Promise<void> {
@@ -33,6 +34,7 @@ export async function resetAllData(challengeId: number): Promise<void> {
     await tx.ledgerEntry.deleteMany({ where: { challengeId } });
     await tx.submission.deleteMany({ where: { challengeId } });
     await tx.sickDay.deleteMany({ where: { challengeId } });
+    await tx.streakFreeze.deleteMany({ where: { challengeId } });
     await tx.dailyReport.deleteMany({ where: { challengeId } });
     await tx.participation.deleteMany({ where: { challengeId } });
     await tx.user.deleteMany({ where: { participations: { none: {} } } });

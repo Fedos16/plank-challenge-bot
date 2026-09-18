@@ -9,6 +9,7 @@ import { applyDayOverride, type OverrideAction } from '../services/manual';
 import { sendDailyReport } from '../services/report';
 import { displayName } from '../services/users';
 import { getParticipationStreaks } from '../services/streaks';
+import { getFreezeState } from '../services/freezes';
 import { resetAllData, resetLedger, resetParticipants, unbindChat } from '../services/reset';
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
@@ -50,6 +51,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     for (const f of intFields) {
       if (body[f] !== undefined && body[f] !== null && !Number.isNaN(Number(body[f]))) {
         data[f] = Math.trunc(Number(body[f]));
+      }
+    }
+
+    // заморозки серии: 0 в любом из полей выключает фичу
+    for (const f of ['freezeEveryDays', 'maxFreezes']) {
+      if (body[f] !== undefined && body[f] !== null && !Number.isNaN(Number(body[f]))) {
+        data[f] = Math.max(0, Math.trunc(Number(body[f])));
       }
     }
 
@@ -219,6 +227,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const rows = [];
     for (const p of participations) {
       const streaks = await getParticipationStreaks(ch, p);
+      const freezes = await getFreezeState(ch, p);
       rows.push({
         participationId: p.id,
         userId: p.userId,
@@ -230,6 +239,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         joinedAt: p.joinedAt.toISOString(),
         currentStreak: streaks.current,
         maxStreak: streaks.max,
+        freezesAvailable: freezes.available,
+        freezesUsed: freezes.used,
+        freezesEarned: freezes.earned,
       });
     }
     return { rows };
@@ -352,6 +364,8 @@ function serializeChallenge(ch: import('@prisma/client').Challenge) {
     fakeFineMultiplier: ch.fakeFineMultiplier,
     chatId: ch.chatId ? ch.chatId.toString() : null,
     freezeStreakOnSick: ch.freezeStreakOnSick,
+    freezeEveryDays: ch.freezeEveryDays,
+    maxFreezes: ch.maxFreezes,
     dmReminders: ch.dmReminders,
     reportTime: ch.reportTime,
     reminderTime: ch.reminderTime,

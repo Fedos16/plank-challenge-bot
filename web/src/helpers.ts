@@ -6,6 +6,7 @@ export const STATE_LABEL: Record<DayState, string> = {
   fake: '❌ Фейк',
   rejected: '🚫 Снят',
   sick: '🤒 Болел',
+  frozen: '❄️ Заморозка',
   missed: '❌ Пропуск',
   pending: '⏳ Ожидаем',
 };

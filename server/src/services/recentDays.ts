@@ -23,6 +23,7 @@ export interface RecentDayRow {
   videoDuration: number | null;
   fine: number; // начисленный за этот день штраф, ₽
   finesTotal: number; // все штрафы участника накопленным итогом на конец этого дня, ₽
+  freezeEarnedDay: DayStr | null; // если день закрыт заморозкой — за какой день она получена
   joined: boolean; // в этот день участник вступил
   left: boolean; // в этот день участник вышел
 }
@@ -121,7 +122,7 @@ export async function getRecentDays(
   const partIds = filtered.map((p) => p.id);
   const dayFilter = { gte: dayToDate(from), lte: dayToDate(to) };
 
-  const [submissions, sickDays, fines] = await Promise.all([
+  const [submissions, sickDays, freezes, fines] = await Promise.all([
     prisma.submission.findMany({
       where: { challengeId: challenge.id, participationId: { in: partIds }, day: dayFilter },
     }),
@@ -132,6 +133,9 @@ export async function getRecentDays(
         day: dayFilter,
         status: 'valid',
       },
+    }),
+    prisma.streakFreeze.findMany({
+      where: { challengeId: challenge.id, participationId: { in: partIds }, day: dayFilter },
     }),
     prisma.ledgerEntry.findMany({
       where: {
@@ -147,6 +151,9 @@ export async function getRecentDays(
   const key = (participationId: number, day: DayStr) => `${participationId}|${day}`;
   const subByKey = new Map(submissions.map((s) => [key(s.participationId, dateToDay(s.day)), s]));
   const sickByKey = new Set(sickDays.map((s) => key(s.participationId, dateToDay(s.day))));
+  const frozenByKey = new Map(
+    freezes.map((f) => [key(f.participationId, dateToDay(f.day)), dateToDay(f.earnedDay)]),
+  );
   const fineByKey = new Map<string, number>();
   // Штрафы до начала окна: с них начинается накопительный итог участника.
   const finesBefore = new Map<number, number>();
@@ -192,9 +199,10 @@ export async function getRecentDays(
         const k = key(p.id, day);
         const sub = subByKey.get(k);
         const sick = sickByKey.has(k);
+        const frozenEarnedDay = frozenByKey.get(k) ?? null;
         const fine = fineByKey.get(k) ?? 0;
         const w = window.get(p.id)!;
-        const hasRecord = Boolean(sub) || sick || fine !== 0;
+        const hasRecord = Boolean(sub) || sick || Boolean(frozenEarnedDay) || fine !== 0;
         // День показываем, если в нём что-то есть или участник в этот день
         // числился в челлендже. У старых выходов (до появления leftAt) дата
         // выхода неизвестна — тогда остаются только дни с отметками.
@@ -203,6 +211,7 @@ export async function getRecentDays(
         if (!hasRecord && !inChallenge) continue;
         let state: DayState;
         if (sub) state = mapSubmissionStatus(sub.status);
+        else if (frozenEarnedDay) state = 'frozen';
         else if (sick) state = 'sick';
         else if (day >= today) state = 'pending';
         else state = 'missed';
@@ -215,6 +224,7 @@ export async function getRecentDays(
           videoDuration: sub?.videoDuration ?? null,
           fine,
           finesTotal: finesTotalByKey.get(k) ?? 0,
+          freezeEarnedDay: frozenEarnedDay,
           joined: day === w.joinDay,
           left: day === w.leftDay,
         });

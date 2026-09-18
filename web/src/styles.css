@@ -154,6 +154,10 @@ body {
   background: rgba(47, 111, 235, 0.15);
   color: var(--link);
 }
+.badge.frozen {
+  background: rgba(88, 166, 255, 0.18);
+  color: #58a6ff;
+}
 
 /* Лидерборд */
 .row {

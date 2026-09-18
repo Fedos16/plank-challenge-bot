@@ -22,6 +22,7 @@ import {
 import { getChallengeById } from '../services/challenge';
 import { getActiveParticipation, displayName } from '../services/users';
 import { reportSick } from '../services/sick';
+import { getFreezeOverview, useFreeze } from '../services/freezes';
 import { challengeDayNumber, dateToDay, todayDay } from '../lib/time';
 
 function challengePublicDTO(ch: Challenge, bank: number) {
@@ -40,6 +41,8 @@ function challengePublicDTO(ch: Challenge, bank: number) {
     minDurationSec: ch.minDurationSec,
     fineAmount: ch.fineAmount,
     fakeFineMultiplier: ch.fakeFineMultiplier,
+    freezeEveryDays: ch.freezeEveryDays,
+    maxFreezes: ch.maxFreezes,
     bank,
   };
 }
@@ -120,6 +123,27 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       day: result.day,
       sickDeadline: r.challenge.sickDeadline,
     };
+  });
+
+  // ---- Заморозки серии (только сам участник, только в кабинете) ----
+  app.get('/challenges/:id/freezes', async (req, reply) => {
+    const r = await resolve(req, reply);
+    if (!r) return;
+    return getFreezeOverview(r.challenge, r.participation);
+  });
+
+  app.post('/challenges/:id/freezes', async (req, reply) => {
+    const r = await resolve(req, reply);
+    if (!r) return;
+    const body = (req.body ?? {}) as { day?: string };
+    if (!body.day || !/^\d{4}-\d{2}-\d{2}$/.test(body.day)) {
+      return reply.code(400).send({ error: 'bad_day' });
+    }
+    const result = await useFreeze(r.challenge, r.participation, body.day);
+    if (!result.ok) {
+      return reply.code(400).send({ error: result.error, freezes: result.state });
+    }
+    return { ok: true, day: result.day, earnedDay: result.earnedDay, freezes: result.state };
   });
 
   // ---- Личные уведомления в ЛС ----

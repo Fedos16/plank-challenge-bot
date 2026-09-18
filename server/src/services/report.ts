@@ -9,7 +9,7 @@ import {
 } from '../lib/time';
 import { getBank } from './bank';
 import { addFine } from './bank';
-import { getDayStatuses, isMissState, type ParticipantDayStatus } from './dayStatus';
+import { getDayStatuses, isFinableState, isMissState, type ParticipantDayStatus } from './dayStatus';
 import { getParticipationStreaks } from './streaks';
 import { pickNextQuote } from './quotes';
 import { displayName } from './users';
@@ -18,14 +18,14 @@ import { displayName } from './users';
 export async function applyDailyFines(challenge: Challenge, day: DayStr): Promise<void> {
   const statuses = await getDayStatuses(challenge, day);
   for (const s of statuses) {
-    if (isMissState(s.state)) {
+    if (isFinableState(s.state)) {
       await addFine({
         challengeId: challenge.id,
         participationId: s.participation.id,
         day,
         type: 'miss',
         amount: challenge.fineAmount,
-        note: 'Пропуск планки',
+        note: s.state === 'frozen' ? 'Пропуск планки (серия заморожена)' : 'Пропуск планки',
       });
     }
   }
@@ -48,6 +48,7 @@ export async function buildDailyReportContent(
 
   const done: string[] = [];
   const sick: string[] = [];
+  const frozen: string[] = [];
   const missed: string[] = [];
   const fake: string[] = [];
 
@@ -56,6 +57,11 @@ export async function buildDailyReportContent(
     if (s.state === 'done') {
       const streaks = await getParticipationStreaks(challenge, s.participation);
       done.push(`• ${name} — серия 🔥 ${streaks.current}`);
+    } else if (s.state === 'frozen') {
+      const streaks = await getParticipationStreaks(challenge, s.participation);
+      frozen.push(
+        `• ${name} — заморозка, серия 🔥 ${streaks.current} цела, штраф ${formatMoney(challenge.fineAmount)}`,
+      );
     } else if (s.state === 'sick') {
       sick.push(`• ${name}`);
     } else if (s.state === 'fake') {
@@ -78,6 +84,12 @@ export async function buildDailyReportContent(
     lines.push('');
     lines.push(`🤒 <b>Болели (${sick.length}):</b>`);
     lines.push(sick.join('\n'));
+  }
+
+  if (frozen.length) {
+    lines.push('');
+    lines.push(`❄️ <b>Заморозили серию (${frozen.length}):</b>`);
+    lines.push(frozen.join('\n'));
   }
 
   if (missed.length) {

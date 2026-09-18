@@ -39,6 +39,8 @@ model Challenge {
   fakeFineMultiplier Int      @default(2)
   chatId             BigInt? // мониторимая группа
   freezeStreakOnSick Boolean  @default(true)
+  freezeEveryDays    Int      @default(30) // сколько дней подряд даёт одну заморозку серии (0 = выключено)
+  maxFreezes         Int      @default(3) // сколько заморозок можно держать на руках (0 = выключено)
   reportTime         String   @default("00:05") // когда слать отчёт за предыдущий день
   reminderTime       String   @default("21:00") // когда напоминать тем, кто не прислал кружок
   dmReminders        Boolean  @default(true) // слать личные напоминания в ЛС (помимо чата)
@@ -51,6 +53,7 @@ model Challenge {
   ledger         LedgerEntry[]
   quotes         MotivationalQuote[]
   reports        DailyReport[]
+  freezes        StreakFreeze[]
 }
 
 // Участие пользователя в челлендже («подтверждение участия»)
@@ -66,6 +69,7 @@ model Participation {
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   submissions       Submission[]
   sickDays          SickDay[]
+  freezes           StreakFreeze[]
   ledger            LedgerEntry[]
   notificationPrefs NotificationPref[]
 
@@ -115,6 +119,24 @@ model SickDay {
   reportedAt      DateTime @default(now())
   status          String   @default("valid") // valid (до дедлайна) | late
   note            String?
+
+  challenge     Challenge     @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  participation Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+
+  @@unique([participationId, day])
+}
+
+// Заморозка серии: участник тратит заработанную заморозку на пропущенный день,
+// чтобы серия не оборвалась. Заработанные заморозки не хранятся — они считаются
+// из истории (каждые challenge.freezeEveryDays дней подряд = одна заморозка),
+// в базе лежат только потраченные.
+model StreakFreeze {
+  id              Int      @id @default(autoincrement())
+  challengeId     Int
+  participationId Int
+  day             DateTime @db.Date // какой день заморожен
+  earnedDay       DateTime @db.Date // день, за который эта заморозка получена (раньше него применить нельзя)
+  createdAt       DateTime @default(now())
 
   challenge     Challenge     @relation(fields: [challengeId], references: [id], onDelete: Cascade)
   participation Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)

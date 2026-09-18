@@ -94,6 +94,7 @@ watch(() => props.challengeId, load);
         :challenge="info"
         :sick-busy="sickBusy"
         @report-sick="onReportSick"
+        @refresh="reloadProfile"
       />
       <LeaderboardView v-else-if="sub === 'board'" :challenge-id="challengeId" :challenge="info" />
       <RulesView v-else :challenge="info" />

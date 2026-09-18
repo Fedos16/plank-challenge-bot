@@ -13,7 +13,8 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
     "setup": "prisma generate && prisma migrate deploy && tsx prisma/seed.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "freezes": "tsx scripts/freezes.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -2,6 +2,7 @@ import type { Challenge } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { dayToDate, type DayStr } from '../lib/time';
 import { addFine, removeFine } from './bank';
+import { releaseFreeze } from './freezes';
 
 export type OverrideAction = 'done' | 'missed' | 'sick' | 'clear' | 'fake';
 
@@ -13,6 +14,10 @@ export async function applyDayOverride(
   action: OverrideAction,
 ): Promise<void> {
   const dayDate = dayToDate(day);
+
+  // любая правка, кроме «пропуск», снимает заморозку с этого дня — заморозка
+  // возвращается участнику (она имеет смысл только на пропущенном дне)
+  if (action !== 'missed') await releaseFreeze(participationId, day);
 
   if (action === 'clear') {
     await prisma.submission.deleteMany({ where: { participationId, day: dayDate } });

@@ -11,10 +11,20 @@ export interface ChallengePublic {
   minDurationSec: number;
   fineAmount: number;
   fakeFineMultiplier: number;
+  freezeEveryDays: number;
+  maxFreezes: number;
   bank: number;
 }
 
-export type DayState = 'done' | 'late' | 'fake' | 'rejected' | 'sick' | 'missed' | 'pending';
+export type DayState =
+  | 'done'
+  | 'late'
+  | 'fake'
+  | 'rejected'
+  | 'sick'
+  | 'frozen'
+  | 'missed'
+  | 'pending';
 
 export interface MyChallenge {
   id: number;
@@ -66,6 +76,42 @@ export interface Profile {
   todayState: DayState;
   streak: { current: number; max: number };
   totals: { done: number; late: number; missed: number; sick: number; finesTotal: number };
+  freezes: {
+    enabled: boolean;
+    available: number;
+    used: number;
+    earned: number;
+    max: number;
+    everyDays: number;
+    daysToNext: number | null;
+    canUse: boolean;
+  };
+}
+
+export interface FreezeUsage {
+  day: string;
+  earnedDay: string;
+  createdAt: string;
+}
+
+export interface FreezableDay {
+  day: string;
+  dayNumber: number;
+}
+
+export interface FreezeOverview {
+  enabled: boolean;
+  everyDays: number;
+  max: number;
+  earned: number;
+  used: number;
+  available: number;
+  grants: string[];
+  usages: FreezeUsage[];
+  daysToNext: number | null;
+  runLength: number;
+  earliestUsableDay: string | null;
+  freezableDays: FreezableDay[];
 }
 
 export interface LeaderboardRow {
@@ -94,6 +140,8 @@ export interface AdminChallenge {
   fakeFineMultiplier: number;
   chatId: string | null;
   freezeStreakOnSick: boolean;
+  freezeEveryDays: number;
+  maxFreezes: number;
   dmReminders: boolean;
   reportTime: string;
   reminderTime: string;
@@ -155,6 +203,9 @@ export interface Participant {
   joinedAt: string;
   currentStreak: number;
   maxStreak: number;
+  freezesAvailable: number;
+  freezesUsed: number;
+  freezesEarned: number;
 }
 
 export interface RecentDayRow {
@@ -166,6 +217,7 @@ export interface RecentDayRow {
   videoDuration: number | null;
   fine: number;
   finesTotal: number;
+  freezeEarnedDay: string | null;
   joined: boolean;
   left: boolean;
 }

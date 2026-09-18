@@ -277,10 +277,11 @@ async function override(
 }
 
 function dayCounts(d: RecentDay) {
-  const counts = { done: 0, missed: 0, sick: 0, pending: 0 };
+  const counts = { done: 0, missed: 0, sick: 0, frozen: 0, pending: 0 };
   for (const r of d.rows) {
     if (r.state === 'done') counts.done += 1;
     else if (r.state === 'sick') counts.sick += 1;
+    else if (r.state === 'frozen') counts.frozen += 1;
     else if (r.state === 'pending') counts.pending += 1;
     else counts.missed += 1;
   }
@@ -384,6 +385,18 @@ onMounted(loadSettings);
       <label class="field"><span class="lbl">Минимум планки (сек)</span><input type="number" v-model.number="settings.minDurationSec" /></label>
       <label class="field"><span class="lbl">Штраф за пропуск (₽)</span><input type="number" v-model.number="settings.fineAmount" /></label>
       <label class="field"><span class="lbl">Множитель за фейк</span><input type="number" v-model.number="settings.fakeFineMultiplier" /></label>
+      <label class="field">
+        <span class="lbl">❄️ Заморозка за сколько дней подряд (0 — выключить)</span>
+        <input type="number" min="0" v-model.number="settings.freezeEveryDays" />
+      </label>
+      <label class="field">
+        <span class="lbl">❄️ Максимум заморозок на руках (0 — выключить)</span>
+        <input type="number" min="0" v-model.number="settings.maxFreezes" />
+      </label>
+      <div class="muted" style="margin: -4px 0 12px">
+        Заморозку тратит сам участник в своём кабинете и только на пропущенный день не раньше дня,
+        когда она заработана. Серия не рвётся, штраф за пропуск остаётся.
+      </div>
       <label class="field"><span class="lbl">Время отчёта (HH:mm)</span><input v-model="settings.reportTime" /></label>
       <label class="field"><span class="lbl">Время напоминания (HH:mm)</span><input v-model="settings.reminderTime" /></label>
       <label class="field"><span class="lbl">«Последний шанс» в ЛС (HH:mm, пусто — выкл)</span><input v-model="settings.lastChanceTime" /></label>
@@ -536,6 +549,10 @@ onMounted(loadSettings);
           <div class="muted">
             🔥 {{ p.currentStreak }} · рекорд {{ p.maxStreak }} · {{ p.status }}
           </div>
+          <div v-if="settings && settings.freezeEveryDays > 0 && settings.maxFreezes > 0" class="muted">
+            ❄️ доступно {{ p.freezesAvailable }} · использовано {{ p.freezesUsed }} · заработано
+            {{ p.freezesEarned }}
+          </div>
           <div class="inline-actions" style="margin-top: 6px">
             <button class="btn small secondary" @click="toggleStatus(p)">
               {{ p.status === 'active' ? 'Исключить' : 'Вернуть' }}
@@ -555,7 +572,8 @@ onMounted(loadSettings);
         <div class="muted" style="margin-bottom: 10px">
           Свежие дни сверху. Нажми на участника, чтобы поправить отметку вручную:
           ✅ сделал, ❌ пропуск, ⚠️ фейк, 🤒 болел, «Сброс» — убрать отметку.
-          Правка меняет серию, пропуски и банк.
+          Правка меняет серию, пропуски и банк. Любая правка, кроме «Пропуск», снимает заморозку
+          с этого дня и возвращает её участнику.
         </div>
         <label class="field">
           <span class="lbl">Участник</span>
@@ -581,6 +599,7 @@ onMounted(loadSettings);
           </div>
           <div class="muted day-counts">
             ✅ {{ dayCounts(d).done }} · ❌ {{ dayCounts(d).missed }} · 🤒 {{ dayCounts(d).sick }}
+            <span v-if="dayCounts(d).frozen"> · ❄️ {{ dayCounts(d).frozen }}</span>
             <span v-if="dayCounts(d).pending"> · ⏳ {{ dayCounts(d).pending }}</span>
           </div>
         </div>
@@ -601,11 +620,14 @@ onMounted(loadSettings);
                 <div class="muted">
                   <span v-if="p.submittedAt">{{ formatTimeRu(p.submittedAt) }}</span>
                   <span v-if="p.submittedAt && p.videoDuration"> · {{ p.videoDuration }} сек</span>
-                  <span v-if="p.fine">
-                    {{ p.submittedAt ? ' · ' : '' }}штраф {{ formatMoney(p.fine) }} · всего
-                    {{ formatMoney(p.finesTotal) }}
+                  <span v-if="p.freezeEarnedDay">
+                    заморозка (получена за {{ formatDateRu(p.freezeEarnedDay) }})
                   </span>
-                  <span v-if="!p.submittedAt && !p.fine">—</span>
+                  <span v-if="p.fine">
+                    {{ p.submittedAt || p.freezeEarnedDay ? ' · ' : '' }}штраф
+                    {{ formatMoney(p.fine) }} · всего {{ formatMoney(p.finesTotal) }}
+                  </span>
+                  <span v-if="!p.submittedAt && !p.fine && !p.freezeEarnedDay">—</span>
                 </div>
               </div>
               <span :class="`badge ${p.state}`">{{ STATE_LABEL[p.state] }}</span>
