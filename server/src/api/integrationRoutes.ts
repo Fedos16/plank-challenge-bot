@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { authPreHandler } from './auth';
 import { prisma } from '../lib/prisma';
 import { WHOOP, buildWhoopAuthUrl, disconnectWhoop, isWhoopEnabled, toIntegrationDTO } from '../services/whoop';
+import { disconnectHub, ensureHub, isHubProvider, listHubs, rotateHubToken } from '../services/integrations';
 
 /** Подключения источников тренировок. Личные: принадлежат человеку, а не челленджу. */
 export async function integrationRoutes(app: FastifyInstance): Promise<void> {
@@ -13,7 +14,32 @@ export async function integrationRoutes(app: FastifyInstance): Promise<void> {
       // фронт не показывает то, что на сервере не настроено
       available: { whoop: isWhoopEnabled() },
       connected: rows.map(toIntegrationDTO),
+      hubs: await listHubs(req.ctx!.user.id),
     };
+  });
+
+  // ---- Телефонные хабы: Health Auto Export (iOS) и Health Connect Webhook (Android) ----
+  // Подключить — значит получить личный адрес и токен, которые вставляются в приложение на телефоне
+  app.post('/integrations/hubs/:provider', async (req, reply) => {
+    const provider = (req.params as { provider: string }).provider;
+    if (!isHubProvider(provider)) return reply.code(400).send({ error: 'bad_provider' });
+    await ensureHub(req.ctx!.user.id, provider);
+    return { hubs: await listHubs(req.ctx!.user.id) };
+  });
+
+  // Перевыпуск токена: старый адрес сразу перестаёт приниматься
+  app.post('/integrations/hubs/:provider/rotate', async (req, reply) => {
+    const provider = (req.params as { provider: string }).provider;
+    if (!isHubProvider(provider)) return reply.code(400).send({ error: 'bad_provider' });
+    await rotateHubToken(req.ctx!.user.id, provider);
+    return { hubs: await listHubs(req.ctx!.user.id) };
+  });
+
+  app.delete('/integrations/hubs/:provider', async (req, reply) => {
+    const provider = (req.params as { provider: string }).provider;
+    if (!isHubProvider(provider)) return reply.code(400).send({ error: 'bad_provider' });
+    await disconnectHub(req.ctx!.user.id, provider);
+    return { hubs: await listHubs(req.ctx!.user.id) };
   });
 
   // Ссылка на страницу согласия WHOOP. Открывается во внешнем браузере: OAuth внутри WebView

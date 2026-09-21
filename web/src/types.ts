@@ -581,8 +581,20 @@ export interface IntegrationInfo {
   lastError: string | null;
 }
 
+export type HubProvider = 'hae' | 'health_connect';
+
+/** Телефонный хаб: приложение на телефоне шлёт тренировки на личный адрес с токеном. */
+export interface HubInfo {
+  provider: HubProvider;
+  url: string;
+  /** null, пока человек не нажал «Подключить». */
+  token: string | null;
+  lastEventAt: string | null;
+}
+
 export interface IntegrationsResponse {
   /** Что настроено на сервере: без ключей приложения провайдер не показывается. */
   available: { whoop: boolean };
   connected: IntegrationInfo[];
+  hubs: HubInfo[];
 }

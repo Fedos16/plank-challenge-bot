@@ -184,6 +184,7 @@ async function main() {
   await fitnessScenario(base);
   await gameScenario(base);
   await whoopScenario(base);
+  await hubsScenario(base);
 
   await app.close();
   console.log('SMOKE OK');
@@ -751,6 +752,150 @@ async function whoopScenario(base: string) {
     await prisma.challenge.delete({ where: { id } }).catch(() => undefined);
     await clean();
     await stub.close();
+  }
+}
+
+/** Телефонные хабы: Health Auto Export (iOS) и Health Connect Webhook (Android). */
+async function hubsScenario(base: string) {
+  console.log('--- хабы: Health Auto Export и Health Connect ---');
+  const { prisma } = await import('../src/lib/prisma');
+  const { randomUUID } = await import('node:crypto');
+  const admin = `${base}/api/admin/challenges`;
+  const clean = async () => {
+    await prisma.integration.deleteMany({ where: { user: { telegramId: 999n } } });
+    await prisma.workout.deleteMany({ where: { user: { telegramId: 999n } } });
+  };
+  await clean();
+
+  const noon = (offset: number, minutes = 0) =>
+    new Date(new Date(`${mskDay(offset)}T09:00:00.000Z`).getTime() + minutes * 60_000);
+  /** Дата в формате Health Auto Export: "2024-02-06 12:00:00 +0300". */
+  const haeDate = (d: Date) =>
+    new Date(d.getTime() + 3 * 3600_000).toISOString().slice(0, 19).replace('T', ' ') + ' +0300';
+  const send = (path: string, token: string, body: unknown, header = 'Authorization') =>
+    fetch(`${base}/api/ingest/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [header]: header === 'Authorization' ? `Bearer ${token}` : token },
+      body: JSON.stringify(body),
+    }).then(async (res) => ({ status: res.status, body: (await res.json().catch(() => null)) as any }));
+
+  const created = await call('POST', admin, { title: 'Smoke хабы', startDate: mskDay(-5), durationDays: 100 });
+  const id: number = created.body.id;
+  try {
+    await call('POST', `${base}/api/challenges/${id}/join`, {});
+    await prisma.participation.updateMany({
+      where: { challengeId: id },
+      data: { joinedAt: new Date(`${mskDay(-6)}T09:00:00.000Z`) },
+    });
+    const journal = async () => (await jget(`${base}/api/challenges/${id}/fitness/workouts`)).workouts as any[];
+
+    // --- подключение ---
+    const list0 = await jget(`${base}/api/integrations`);
+    expect(
+      'хабы до подключения',
+      list0.hubs.map((h: any) => [h.provider, h.token, h.url.replace(base, '')]),
+      [['hae', null, '/api/ingest/health-auto-export'], ['health_connect', null, '/api/ingest/health-connect']],
+    );
+    expect('неизвестный хаб -> 400', (await call('POST', `${base}/api/integrations/hubs/fitbit`)).status, 400);
+
+    const tokenOf = (res: any, provider: string): string => res.body.hubs.find((h: any) => h.provider === provider).token;
+    const haeToken = tokenOf(await call('POST', `${base}/api/integrations/hubs/hae`), 'hae');
+    expect('повторное подключение токен не меняет', tokenOf(await call('POST', `${base}/api/integrations/hubs/hae`), 'hae'), haeToken);
+    const hcToken = tokenOf(await call('POST', `${base}/api/integrations/hubs/health_connect`), 'health_connect');
+
+    // --- Health Auto Export ---
+    const run = {
+      id: randomUUID(), name: 'Running', start: haeDate(noon(-1)), end: haeDate(noon(-1, 40)), duration: 2400,
+      activeEnergyBurned: { qty: 1673.6, units: 'kJ' }, distance: { qty: 3.5, units: 'mi' },
+      heartRate: { avg: { qty: 151, units: 'bpm' }, max: { qty: 176, units: 'bpm' } },
+    };
+    // формат v1: без id, энергия в activeEnergy
+    const gym = { name: 'Силовая тренировка', start: haeDate(noon(-2)), end: haeDate(noon(-2, 55)), activeEnergy: { qty: 380, units: 'kcal' } };
+    const haeBody = { data: { workouts: [run, gym], metrics: [] } };
+
+    const first = await send('health-auto-export', haeToken, haeBody);
+    expect('первая выгрузка', [first.status, first.body.received, first.body.created], [200, 2, 2]);
+    const again = await send('health-auto-export', haeToken, haeBody);
+    expect('повторная выгрузка не задваивает', [again.body.created, again.body.updated, (await journal()).length], [0, 2, 2]);
+
+    const runRow = (await journal()).find((w) => w.sportRaw === 'Running');
+    expect(
+      'тренировка с iPhone: кДж и мили пересчитаны',
+      [runRow.source, runRow.sport, runRow.durationMin, runRow.kcal, runRow.distanceM, runRow.avgHr, runRow.verdict],
+      ['hae', 'run', 40, 400, 5633, 151, 'counted'],
+    );
+    expect('название на языке телефона', (await journal()).find((w) => w.sportRaw === 'Силовая тренировка').sport, 'strength');
+
+    // тяжёлая выгрузка: пульс по секундам раздувает тело запроса сверх стандартного мегабайта
+    const heavy = { ...run, heartRateData: Array.from({ length: 40000 }, (_, i) => ({ date: run.start, Avg: 120 + (i % 40), units: 'bpm', source: 'Apple Watch' })) };
+    const heavyBody = { data: { workouts: [heavy] } };
+    const size = Buffer.byteLength(JSON.stringify(heavyBody));
+    const big = await send('health-auto-export', haeToken, heavyBody);
+    expect('запрос больше мегабайта принят', [size > 1024 * 1024, big.status, big.body.updated], [true, 200, 1]);
+
+    expect('чужой токен -> 401', (await send('health-auto-export', 'no-such-token', haeBody)).status, 401);
+    expect('токен Android не подходит к адресу iOS', (await send('health-auto-export', hcToken, haeBody)).status, 401);
+    expect('чужой формат -> 400', (await send('health-auto-export', haeToken, { workouts: [] })).status, 400);
+    expect('выгрузка без тренировок — не ошибка', (await send('health-auto-export', haeToken, { data: { metrics: [] } })).body.received, 0);
+    expect('токен в X-Ingest-Token', (await send('health-auto-export', haeToken, haeBody, 'X-Ingest-Token')).status, 200);
+
+    // --- Health Connect: та же пробежка с другого телефона-хаба и новая тренировка ---
+    const hcBody = {
+      timestamp: new Date().toISOString(),
+      app_version: '1.2.3',
+      exercise: [
+        { type: 'EXERCISE_TYPE_RUNNING', start_time: noon(-1, 1).toISOString(), end_time: noon(-1, 40).toISOString(), duration_seconds: 2340 },
+        { type: 'BIKING', start_time: noon(0).toISOString(), end_time: noon(0, 60).toISOString(), duration_seconds: 3600, distance_meters: 21500 },
+      ],
+      active_calories: [
+        { calories: 200, start_time: noon(0, -30).toISOString(), end_time: noon(0, 30).toISOString() },
+        { calories: 310, start_time: noon(0, 30).toISOString(), end_time: noon(0, 60).toISOString() },
+      ],
+      heart_rate: [{ bpm: 132, time: noon(0, 10).toISOString() }, { bpm: 148, time: noon(0, 50).toISOString() }],
+    };
+    const hc = await send('health-connect', hcToken, hcBody);
+    expect('выгрузка с Android', [hc.status, hc.body.received, hc.body.created], [200, 2, 2]);
+    const bike = (await journal()).find((w) => w.source === 'health_connect' && w.sport === 'cycling');
+    expect(
+      'калории и пульс собраны из соседних массивов',
+      [bike.kcal, bike.avgHr, bike.distanceM, bike.verdict],
+      [410, 140, 21500, 'counted'], // половина первой записи энергии + вторая целиком
+    );
+    const hcRun = (await journal()).find((w) => w.source === 'health_connect' && w.sport === 'run');
+    expect('одна пробежка из двух хабов — один зачёт', hcRun.verdict, 'duplicate');
+    expect('окно в 48 часов приходит повторно', (await send('health-connect', hcToken, hcBody)).body.created, 0);
+
+    // --- ручная запись поверх автоматической — дубль ---
+    const manual = await call('POST', `${base}/api/workouts`, {
+      clientId: randomUUID(), sport: 'strength', startedAt: noon(-2, 5).toISOString(), durationMin: 50,
+    });
+    expect('ручная поверх записи с телефона — дубль', (await journal()).find((w) => w.id === manual.body.id).verdict, 'duplicate');
+
+    // --- удалённое не возвращается ---
+    await call('DELETE', `${base}/api/workouts/${runRow.id}`);
+    const resent = await send('health-auto-export', haeToken, haeBody);
+    expect('удалённая тренировка не возвращается', [resent.body.skippedDeleted, (await journal()).some((w) => w.id === runRow.id)], [1, false]);
+    expect('её дубль с Android снова в зачёте', (await journal()).find((w) => w.id === hcRun.id).verdict, 'counted');
+
+    // --- ротация и отключение ---
+    const rotated = tokenOf(await call('POST', `${base}/api/integrations/hubs/hae/rotate`), 'hae');
+    expect(
+      'после перевыпуска старый токен мёртв, новый работает',
+      [rotated !== haeToken, (await send('health-auto-export', haeToken, haeBody)).status, (await send('health-auto-export', rotated, haeBody)).status],
+      [true, 401, 200],
+    );
+    const before = (await journal()).length;
+    await call('DELETE', `${base}/api/integrations/hubs/hae`);
+    expect(
+      'отключение: токен не действует, тренировки остаются',
+      [(await send('health-auto-export', rotated, haeBody)).status, (await journal()).length],
+      [401, before],
+    );
+    const seen = (await jget(`${base}/api/integrations`)).hubs.find((h: any) => h.provider === 'health_connect');
+    expect('видно, когда хаб последний раз присылал данные', typeof seen.lastEventAt, 'string');
+  } finally {
+    await prisma.challenge.delete({ where: { id } }).catch(() => undefined);
+    await clean();
   }
 }
 

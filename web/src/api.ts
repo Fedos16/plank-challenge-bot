@@ -14,6 +14,8 @@ import type {
   FitnessOverview,
   FreezeOverview,
   GoalInput,
+  HubInfo,
+  HubProvider,
   IntegrationsResponse,
   LeaderboardRow,
   LedgerEntry,
@@ -151,6 +153,12 @@ export const api = {
   getIntegrations: () => request<IntegrationsResponse>('/integrations'),
   connectWhoop: () => request<{ url: string }>('/integrations/whoop/connect', { method: 'POST' }),
   disconnectWhoop: () => request<{ ok: boolean }>('/integrations/whoop', { method: 'DELETE' }),
+  connectHub: (provider: HubProvider) =>
+    request<{ hubs: HubInfo[] }>(`/integrations/hubs/${provider}`, { method: 'POST' }),
+  rotateHubToken: (provider: HubProvider) =>
+    request<{ hubs: HubInfo[] }>(`/integrations/hubs/${provider}/rotate`, { method: 'POST' }),
+  disconnectHub: (provider: HubProvider) =>
+    request<{ hubs: HubInfo[] }>(`/integrations/hubs/${provider}`, { method: 'DELETE' }),
 
   // --- админка фитнеса: недели, жизни, модерация ---
   adminFitnessWeeks: (id: number) =>
