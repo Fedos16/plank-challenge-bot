@@ -237,7 +237,14 @@ Connect. Приложение-экспортёр читает его и шлёт
 | Телефон | Приложение | Адрес | Что покрывает |
 |---|---|---|---|
 | iPhone | Health Auto Export (автоматизации — платная функция) | `POST /api/ingest/health-auto-export` | Apple Watch, Garmin, Polar, Suunto |
-| Android | Health Connect Webhook (бесплатно) | `POST /api/ingest/health-connect` | Mi Fitness, Zepp (Amazfit), Samsung Health, Garmin, Polar |
+| Android | Health Connect Webhook (в Google Play платно; бесплатная сборка — в релизах на GitHub) | `POST /api/ingest/health-connect` | Mi Fitness, Zepp (Amazfit), Samsung Health, Garmin, Polar |
+
+Health Connect Webhook — приложение с открытым кодом (AGPL). В Google Play оно платное, но автор
+выкладывает бесплатную сборку `app-foss-release.apk` в
+[релизах на GitHub](https://github.com/mcnaveen/health-connect-webhook/releases/latest) — та же
+программа, ставится файлом; обновлять её удобно через Obtainium. Кнопка на неё есть в инструкции
+в приложении. У того же автора есть версия для iPhone («Health Webhook») с тем же форматом —
+её примет тот же адрес `health-connect`, — но отправка в ней тоже платная.
 
 Токен передаётся как у весов: `Authorization: Bearer <токен>`, `X-Ingest-Token` или `?token=`.
 Он привязан к своему приёмнику — токен от Android к адресу iOS не подойдёт.

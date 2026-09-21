@@ -27,6 +27,8 @@ interface HubGuide {
   covers: string;
   note: string;
   steps: string[];
+  /** Откуда взять приложение, если магазин — не лучший вариант. */
+  download?: { label: string; url: string };
 }
 
 const HUBS: Record<HubProvider, HubGuide> = {
@@ -46,9 +48,16 @@ const HUBS: Record<HubProvider, HubGuide> = {
     title: 'Android · браслеты и часы',
     covers: 'Всё, что пишет в Health Connect: Mi Fitness, Zepp (Amazfit), Samsung Health, Garmin, Polar',
     note: 'Huawei Health в Health Connect напрямую не пишет — таким участникам проще вносить тренировки вручную.',
+    // В Google Play приложение платное, но у него открытый код и автор сам выкладывает
+    // бесплатную сборку в релизах на GitHub — та же программа, без магазина.
+    download: {
+      label: 'Скачать бесплатную сборку (GitHub)',
+      url: 'https://github.com/mcnaveen/health-connect-webhook/releases/latest',
+    },
     steps: [
       'В приложении браслета включите синхронизацию с Health Connect (обычно «Профиль» → «Подключённые приложения»).',
-      'Установите Health Connect Webhook из Google Play и разрешите читать Exercise, Active calories и Heart rate.',
+      'Скачайте по кнопке ниже файл app-foss-release.apk и установите его: Android попросит разрешить установку из браузера — это нормально. В Google Play то же приложение платное, эта сборка — бесплатная, от самого автора.',
+      'Откройте Health Connect Webhook и разрешите читать Exercise, Active calories и Heart rate.',
       'Добавьте Webhook URL — адрес ниже. В Custom headers добавьте Authorization со значением ниже.',
       'Включите фоновую синхронизацию и нажмите Sync now.',
     ],
@@ -239,6 +248,14 @@ onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible
         <ol class="steps">
           <li v-for="(s, i) in HUBS[hub.provider].steps" :key="i">{{ s }}</li>
         </ol>
+        <button
+          v-if="HUBS[hub.provider].download"
+          class="btn small"
+          style="margin-bottom: 12px"
+          @click="openExternal(HUBS[hub.provider].download!.url)"
+        >
+          ⬇️ {{ HUBS[hub.provider].download!.label }}
+        </button>
 
         <div v-if="!hub.url" class="error-text small">
           На сервере не задан публичный адрес (WEBAPP_URL) — адрес для приложения собрать не из чего.
