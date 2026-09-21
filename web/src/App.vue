@@ -6,7 +6,8 @@ import ChallengeListView from './components/ChallengeListView.vue';
 import ChallengeView from './components/ChallengeView.vue';
 import PersonalChallengeView from './components/PersonalChallengeView.vue';
 import WeightView from './components/WeightView.vue';
-import AdminView from './components/AdminView.vue';
+import FitnessView from './components/FitnessView.vue';
+import AdminHome from './components/AdminHome.vue';
 
 type Tab = 'challenges' | 'admin';
 
@@ -16,7 +17,7 @@ const personal = ref<PersonalSummary[]>([]);
 const available = ref<AvailableChallenge[]>([]);
 const userName = ref('');
 const isAdmin = ref(false);
-type Screen = 'group' | 'personal' | 'weight';
+type Screen = 'group' | 'personal' | 'weight' | 'fitness';
 
 const selected = ref<{ kind: Screen; id: number } | null>(null);
 const loading = ref(true);
@@ -26,6 +27,7 @@ const error = ref<string | null>(null);
 function screenFor(kind: string): Screen | null {
   if (kind === 'plank') return 'group';
   if (kind === 'weight') return 'weight';
+  if (kind === 'fitness') return 'fitness';
   return null;
 }
 
@@ -99,7 +101,7 @@ onMounted(() => load(true));
 
   <template v-else>
     <div class="app">
-      <AdminView v-if="tab === 'admin' && isAdmin" />
+      <AdminHome v-if="tab === 'admin' && isAdmin" />
       <template v-else>
         <PersonalChallengeView
           v-if="selected?.kind === 'personal'"
@@ -109,6 +111,12 @@ onMounted(() => load(true));
         />
         <WeightView
           v-else-if="selected?.kind === 'weight'"
+          :challenge-id="selected.id"
+          @back="backToList"
+          @left="backToList"
+        />
+        <FitnessView
+          v-else-if="selected?.kind === 'fitness'"
           :challenge-id="selected.id"
           @back="backToList"
           @left="backToList"
@@ -127,6 +135,7 @@ onMounted(() => load(true));
           :user-name="userName"
           @open-group="(id: number) => (selected = { kind: 'group', id })"
           @open-weight="(id: number) => (selected = { kind: 'weight', id })"
+          @open-fitness="(id: number) => (selected = { kind: 'fitness', id })"
           @open-personal="(id: number) => (selected = { kind: 'personal', id })"
           @join="joinChallenge"
           @create="createPersonal"

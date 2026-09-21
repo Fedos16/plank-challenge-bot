@@ -203,6 +203,60 @@ export async function deleteMeasurement(
   return r.count;
 }
 
+export interface ManualWeightInput {
+  weightKg: number;
+  bodyFat?: number | null;
+  water?: number | null;
+  muscle?: number | null;
+  /** Когда взвесились; по умолчанию — сейчас. */
+  measuredAt?: Date;
+}
+
+export type ManualWeightError = 'bad_weight' | 'bad_percent' | 'bad_date';
+
+/** Процент состава тела: пусто допустимо, иначе (0..100]. Ноль — «не измерено», как у весов. */
+function manualPercent(v: number | null | undefined): number | null | 'bad' {
+  if (v === null || v === undefined || v === 0) return null;
+  if (!Number.isFinite(v) || v < 0 || v > 100) return 'bad';
+  return round1(v);
+}
+
+/**
+ * Взвешивание, введённое руками: у кого нет умных весов, тот ведёт вес сам.
+ * От записей с весов отличается пустым sourceOwnerId. Повтор на тот же момент обновляет запись.
+ */
+export async function addManualWeight(
+  userId: number,
+  input: ManualWeightInput,
+): Promise<WeightEntry | ManualWeightError> {
+  if (!Number.isFinite(input.weightKg) || input.weightKg <= 0 || input.weightKg > 500) {
+    return 'bad_weight';
+  }
+  const bodyFat = manualPercent(input.bodyFat);
+  const water = manualPercent(input.water);
+  const muscle = manualPercent(input.muscle);
+  if (bodyFat === 'bad' || water === 'bad' || muscle === 'bad') return 'bad_percent';
+
+  const measuredAt = input.measuredAt ?? new Date();
+  // будущее не принимаем: запас в сутки покрывает расхождение часов и поясов
+  if (Number.isNaN(measuredAt.getTime()) || measuredAt.getTime() > Date.now() + 86_400_000) {
+    return 'bad_date';
+  }
+
+  const data = {
+    weightKg: Math.round(input.weightKg * 100) / 100,
+    bodyFat,
+    water,
+    muscle,
+    day: dayToDate(challengeDay(measuredAt, tz())),
+  };
+  return prisma.weightEntry.upsert({
+    where: { userId_measuredAt: { userId, measuredAt } },
+    create: { userId, measuredAt, ...data },
+    update: data,
+  });
+}
+
 /** Удаление из кабинета. */
 export async function deleteEntry(userId: number, id: number): Promise<boolean> {
   const r = await prisma.weightEntry.deleteMany({ where: { id, userId } });
@@ -222,12 +276,16 @@ function round1(n: number): number {
 }
 
 /**
- * Кому можно отдать профиль весов: участники групп взвешиваний, в которых состоит владелец.
- * Планка здесь ни при чём — туда люди попадают автоматически, и вес к ней отношения не имеет.
+ * Кому можно отдать профиль весов: участники групп, где вес — часть челленджа (взвешивания
+ * и фитнес), в которых состоит владелец. Планка здесь ни при чём: вес к ней отношения не имеет.
  */
 async function assignCandidates(ownerId: number): Promise<{ userId: number; name: string }[]> {
   const mine = await prisma.participation.findMany({
-    where: { userId: ownerId, status: 'active', challenge: { isActive: true, kind: 'weight' } },
+    where: {
+      userId: ownerId,
+      status: 'active',
+      challenge: { isActive: true, kind: { in: ['weight', 'fitness'] } },
+    },
     select: { challengeId: true },
   });
   const neighbours = await prisma.participation.findMany({

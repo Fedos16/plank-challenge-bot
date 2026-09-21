@@ -1,11 +1,21 @@
 import { getInitData } from './telegram';
 import type {
   AdminChallenge,
+  AdminChallengeRow,
+  AdminFitnessChallenge,
+  AdminFitnessInput,
+  AdminFitnessParticipant,
+  BodyProfile,
   ChallengePublic,
   DebtsOverview,
+  FitnessOverview,
   FreezeOverview,
+  GoalInput,
   LeaderboardRow,
   LedgerEntry,
+  ManualWeightInput,
+  Measurement,
+  MeasurementKind,
   MyChallengesResponse,
   NotificationSettings,
   Participant,
@@ -106,6 +116,34 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ targetUserId }),
     }),
+
+  addManualWeight: (data: ManualWeightInput) =>
+    request<WeightOverview>('/weight', { method: 'POST', body: JSON.stringify(data) }),
+
+  // --- фитнес-челлендж: цель, анкета, обхваты ---
+  getFitness: (id: number) => request<FitnessOverview>(`/challenges/${id}/fitness`),
+  saveGoal: (id: number, data: GoalInput) =>
+    request<FitnessOverview>(`/challenges/${id}/goal`, { method: 'PUT', body: JSON.stringify(data) }),
+  saveBodyProfile: (data: Partial<BodyProfile>) =>
+    request<BodyProfile>('/body-profile', { method: 'PUT', body: JSON.stringify(data) }),
+  getMeasurements: () => request<{ rows: Measurement[] }>('/measurements'),
+  saveMeasurement: (data: { kind: MeasurementKind; value: number; day?: string }) =>
+    request<{ rows: Measurement[] }>('/measurements', { method: 'PUT', body: JSON.stringify(data) }),
+  deleteMeasurement: (id: number) =>
+    request<{ rows: Measurement[] }>(`/measurements/${id}`, { method: 'DELETE' }),
+
+  // --- админка челленджей по id (фитнес) ---
+  adminListChallenges: () => request<{ rows: AdminChallengeRow[] }>('/admin/challenges'),
+  adminCreateFitness: (data: AdminFitnessInput) =>
+    request<AdminFitnessChallenge>('/admin/challenges', { method: 'POST', body: JSON.stringify(data) }),
+  adminGetFitness: (id: number) => request<AdminFitnessChallenge>(`/admin/challenges/${id}`),
+  adminUpdateFitness: (id: number, data: AdminFitnessInput) =>
+    request<AdminFitnessChallenge>(`/admin/challenges/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  adminFitnessParticipants: (id: number) =>
+    request<{ rows: AdminFitnessParticipant[] }>(`/admin/challenges/${id}/participants`),
 
   // --- админские ---
   getNotifications: (challengeId: number) =>

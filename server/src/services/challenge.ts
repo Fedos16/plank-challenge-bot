@@ -1,5 +1,6 @@
 import type { Challenge } from '@prisma/client';
 import { prisma } from '../lib/prisma';
+import { challengeDayNumber, dateToDay, dayjs, todayDay, type DayStr } from '../lib/time';
 
 /**
  * Механика челленджа: ежедневная планка со штрафами, группа для взвешиваний либо фитнес
@@ -28,6 +29,40 @@ const CAPABILITIES: Record<ChallengeKind, readonly Capability[]> = {
 export function can(ch: Challenge, cap: Capability): boolean {
   const caps: readonly Capability[] | undefined = CAPABILITIES[ch.kind as ChallengeKind];
   return caps?.includes(cap) ?? false;
+}
+
+/** Последний день челленджа. У бессрочного (durationDays не задан) — null. */
+export function challengeEndDay(ch: Challenge): DayStr | null {
+  if (!ch.durationDays || ch.durationDays <= 0) return null;
+  return dayjs
+    .utc(dateToDay(ch.startDate))
+    .add(ch.durationDays - 1, 'day')
+    .format('YYYY-MM-DD');
+}
+
+export type ChallengePhase = 'upcoming' | 'running' | 'finished';
+
+export interface ChallengeTimeline {
+  startDate: DayStr;
+  endDate: DayStr | null;
+  daysTotal: number | null;
+  /** Номер сегодняшнего дня, зажатый в [0..daysTotal]: до старта 0, после конца — последний. */
+  dayNumber: number;
+  phase: ChallengePhase;
+}
+
+export function challengeTimeline(ch: Challenge): ChallengeTimeline {
+  const startDate = dateToDay(ch.startDate);
+  const endDate = challengeEndDay(ch);
+  const daysTotal = endDate ? ch.durationDays : null;
+  const raw = challengeDayNumber(startDate, todayDay(ch.timezone));
+
+  let phase: ChallengePhase = 'running';
+  if (raw < 1) phase = 'upcoming';
+  else if (daysTotal && raw > daysTotal) phase = 'finished';
+
+  const dayNumber = Math.max(0, daysTotal ? Math.min(raw, daysTotal) : raw);
+  return { startDate, endDate, daysTotal, dayNumber, phase };
 }
 
 /**
@@ -63,7 +98,7 @@ export async function listActiveChallengesByKind(kind: ChallengeKind): Promise<C
 /** Активные челленджи, в которых пользователь ещё не состоит: их он может выбрать сам. */
 export async function listJoinableChallenges(userId: number): Promise<Challenge[]> {
   const challenges = await prisma.challenge.findMany({
-    where: { isActive: true },
+    where: { isActive: true, joinOpen: true },
     orderBy: { createdAt: 'asc' },
   });
   if (challenges.length === 0) return [];

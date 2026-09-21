@@ -34,10 +34,20 @@ export interface WeightSummary {
   count: number;
 }
 
+export type ChallengePhase = 'upcoming' | 'running' | 'finished';
+
+export interface FitnessSummary {
+  dayNumber: number;
+  daysTotal: number | null;
+  phase: ChallengePhase;
+  hasGoal: boolean;
+  progressPercent: number | null;
+}
+
 export interface MyChallenge {
   id: number;
   key: string;
-  /** plank — планка со штрафами, weight — группа взвешиваний */
+  /** plank — планка со штрафами, weight — группа взвешиваний, fitness — тренировки и цели */
   kind: string;
   title: string;
   description: string;
@@ -46,6 +56,7 @@ export interface MyChallenge {
   currentStreak?: number;
   bank?: number;
   weight?: WeightSummary;
+  fitness?: FitnessSummary;
 }
 
 export interface AvailableChallenge {
@@ -309,4 +320,149 @@ export interface WeightOverview {
   history: WeightPoint[];
   profiles: ScaleProfile[];
   candidates: { userId: number; name: string }[];
+}
+
+// ---------- Фитнес-челлендж ----------
+
+export type GoalType = 'lose_weight' | 'lose_fat' | 'gain_muscle' | 'custom';
+export type GoalMetric = 'weightKg' | 'bodyFat' | 'muscle';
+export type Sex = 'male' | 'female';
+export type MeasurementKind = 'waist' | 'chest' | 'hips' | 'thigh' | 'biceps' | 'neck';
+
+export interface BodyProfile {
+  heightCm: number | null;
+  birthYear: number | null;
+  sex: Sex | null;
+  activityFactor: number;
+  /** Показывать другим участникам вес и % жира, а не только процент к цели. */
+  shareBody: boolean;
+}
+
+export interface Goal {
+  goalType: GoalType;
+  targetValue: number | null;
+  startWeightKg: number | null;
+  startBodyFat: number | null;
+  startMuscle: number | null;
+  startDay: string | null;
+  dailyKcalTarget: number | null;
+  note: string | null;
+}
+
+export interface GoalProgress {
+  /** Показатель цели; у свободной цели — null, и процента нет. */
+  metric: GoalMetric | null;
+  start: number | null;
+  target: number | null;
+  current: number | null;
+  percent: number | null;
+}
+
+export interface FitnessSettings {
+  weeklyWorkouts: number;
+  lives: number;
+  minWorkoutMin: number;
+  maxWorkoutsPerDay: number;
+  weekCloseTime: string;
+}
+
+export interface ChallengeTimeline {
+  startDate: string;
+  endDate: string | null;
+  daysTotal: number | null;
+  dayNumber: number;
+  phase: ChallengePhase;
+}
+
+export interface FitnessParticipant {
+  participationId: number;
+  name: string;
+  isMe: boolean;
+  goalType: GoalType | null;
+  progressPercent: number | null;
+  /** Цифры видны, только если участник сам открыл их в анкете. */
+  body: { start: number | null; current: number | null; target: number | null } | null;
+}
+
+export interface FitnessOverview {
+  challenge: ChallengeTimeline & {
+    id: number;
+    title: string;
+    description: string;
+    rulesText: string;
+    timezone: string;
+    weekNumber: number;
+    weeksTotal: number | null;
+  };
+  settings: FitnessSettings;
+  bodyProfile: BodyProfile;
+  goal: Goal | null;
+  progress: GoalProgress | null;
+  participants: FitnessParticipant[];
+}
+
+export interface GoalInput {
+  goalType: GoalType;
+  targetValue: number | null;
+  startWeightKg: number | null;
+  startBodyFat: number | null;
+  startMuscle: number | null;
+  dailyKcalTarget: number | null;
+  note: string | null;
+}
+
+export interface Measurement {
+  id: number;
+  day: string;
+  kind: MeasurementKind;
+  value: number;
+}
+
+export interface ManualWeightInput {
+  weightKg: number;
+  bodyFat?: number | null;
+  muscle?: number | null;
+  water?: number | null;
+  measuredAt?: string;
+}
+
+export interface AdminChallengeRow extends ChallengeTimeline {
+  id: number;
+  kind: string;
+  title: string;
+  isActive: boolean;
+  participants: number;
+}
+
+export interface AdminFitnessChallenge extends ChallengeTimeline, FitnessSettings {
+  id: number;
+  key: string;
+  kind: string;
+  title: string;
+  description: string;
+  rulesText: string;
+  isActive: boolean;
+  joinOpen: boolean;
+  timezone: string;
+  durationDays: number | null;
+  chatId: string | null;
+}
+
+export type AdminFitnessInput = Partial<
+  Pick<
+    AdminFitnessChallenge,
+    | 'title' | 'description' | 'rulesText' | 'timezone' | 'isActive' | 'joinOpen' | 'startDate'
+    | 'weeklyWorkouts' | 'lives' | 'minWorkoutMin' | 'maxWorkoutsPerDay' | 'weekCloseTime' | 'chatId'
+  >
+> & { durationDays?: number | null | '' };
+
+export interface AdminFitnessParticipant {
+  participationId: number;
+  userId: number;
+  name: string;
+  username: string | null;
+  status: string;
+  joinedAt: string;
+  goalType: GoalType | null;
+  progress: GoalProgress | null;
 }

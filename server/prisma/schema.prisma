@@ -28,6 +28,8 @@ model User {
   weights            WeightEntry[]
   scaleProfiles      ScaleProfile[]      @relation("ScaleProfileOwner")
   scaleProfilesTaken ScaleProfile[]      @relation("ScaleProfileTarget")
+  bodyProfile        UserBodyProfile?
+  measurements       BodyMeasurement[]
 
   @@index([scaleToken])
 }
@@ -36,7 +38,8 @@ model User {
 model Challenge {
   id                 Int      @id @default(autoincrement())
   key                String   @unique
-  /// plank — ежедневная планка с кружками и штрафами; weight — группа для взвешиваний
+  /// plank — ежедневная планка с кружками и штрафами; weight — группа для взвешиваний;
+  /// fitness — недельная норма тренировок, жизни и личные цели
   kind               String   @default("plank")
   title              String
   description        String   @default("")
@@ -57,6 +60,15 @@ model Challenge {
   reminderTime       String   @default("21:00") // когда напоминать тем, кто не прислал кружок
   dmReminders        Boolean  @default(true) // слать личные напоминания в ЛС (помимо чата)
   lastChanceTime     String   @default("23:30") // «последний шанс» в ЛС перед дедлайном (пусто = выкл)
+  /// Длительность в днях: последний день = startDate + durationDays − 1. null — бессрочный.
+  durationDays       Int?
+  joinOpen           Boolean  @default(true) // можно ли вступить кнопкой «Участвовать»
+  // ---- только для kind=fitness ----
+  weeklyWorkouts     Int      @default(3) // обязательных тренировок за 7-дневку от даты старта
+  lives              Int      @default(3) // проваленная неделя снимает жизнь, ноль — выбыл
+  minWorkoutMin      Int      @default(20) // короче этого тренировка в зачёт недели не идёт
+  maxWorkoutsPerDay  Int      @default(1) // сколько тренировок одного дня идёт в зачёт
+  weekCloseTime      String   @default("12:00") // итог недели — на следующий день после её конца
   createdAt          DateTime @default(now())
 
   participations Participation[]
@@ -84,6 +96,7 @@ model Participation {
   freezes           StreakFreeze[]
   ledger            LedgerEntry[]
   notificationPrefs NotificationPref[]
+  goal              ParticipantGoal?
 
   @@unique([challengeId, userId])
 }
@@ -264,4 +277,55 @@ model DailyReport {
   challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
 
   @@unique([challengeId, day])
+}
+
+// ВАЖНО для таблиц ниже: схема накатывается `prisma db push` без миграций, а он отказывается
+// вешать уникальный индекс на уже существующую таблицу. Все @unique задаются в момент
+// создания таблицы; позже добавлять можно только nullable-поля, поля с @default и @@index.
+
+// Антропометрия человека. Привязана к пользователю, а не к участию: рост и год рождения
+// переживают челлендж и нужны для расчёта базового обмена.
+model UserBodyProfile {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique
+  heightCm       Float?
+  birthYear      Int?
+  sex            String? // male | female
+  activityFactor Float    @default(1.2) // бытовая активность поверх базового обмена
+  shareBody      Boolean  @default(false) // показывать другим вес и % жира, а не только % к цели
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Личная цель участника в фитнес-челлендже и точка отсчёта для неё
+model ParticipantGoal {
+  id              Int       @id @default(autoincrement())
+  participationId Int       @unique
+  goalType        String // lose_weight | lose_fat | gain_muscle | custom
+  targetValue     Float? // кг для lose_weight, проценты для lose_fat и gain_muscle
+  startWeightKg   Float?
+  startBodyFat    Float?
+  startMuscle     Float?
+  startDay        DateTime? @db.Date
+  dailyKcalTarget Int? // необязательная личная дневная цель по калориям
+  note            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  participation Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+}
+
+// Обхваты и прочие замеры сантиметровой лентой: одно значение вида на день
+model BodyMeasurement {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  day       DateTime @db.Date
+  kind      String // waist | chest | hips | thigh | biceps | neck
+  value     Float // сантиметры
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day, kind])
 }

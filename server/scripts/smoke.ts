@@ -165,8 +165,140 @@ async function main() {
     '| осталось записей=', w2.stats.count,
   );
 
+  await fitnessScenario(base);
+
   await app.close();
   console.log('SMOKE OK');
+}
+
+/** В отличие от разделов выше, здесь расхождение роняет прогон, а не теряется в выводе. */
+function expect(label: string, actual: unknown, expected: unknown) {
+  const ok = JSON.stringify(actual) === JSON.stringify(expected);
+  console.log(`  ${ok ? '✓' : '✗'} ${label}:`, actual, ok ? '' : `(ожидали ${JSON.stringify(expected)})`);
+  if (!ok) throw new Error(`fitness: ${label}`);
+}
+
+async function call(method: string, url: string, body?: unknown, headers = HEADERS) {
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: res.status, body: (await res.json().catch(() => null)) as any };
+}
+
+/** Фитнес-челлендж: создание админом, вступление, анкета, цель, ручной вес, обхваты. */
+async function fitnessScenario(base: string) {
+  console.log('--- фитнес-челлендж ---');
+  const day = (offset: number) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+  const admin = `${base}/api/admin/challenges`;
+
+  // Ручные замеры прошлого прогона мешают повторному: стартовая точка цели создаётся,
+  // только если за сутки взвешиваний не было. Записи с весов (sourceOwnerId задан) не трогаем.
+  const { prisma } = await import('../src/lib/prisma');
+  const cleanManual = () =>
+    prisma.weightEntry.deleteMany({ where: { user: { telegramId: 999n }, sourceOwnerId: null } });
+  await cleanManual();
+
+  const bad = await call('POST', admin, { title: 'Smoke', startDate: day(-10), lives: 0 });
+  expect('жизни вне диапазона -> 400', [bad.status, bad.body?.error], [400, 'bad_lives']);
+
+  const created = await call('POST', admin, {
+    title: 'Smoke 100 дней',
+    startDate: day(-10),
+    durationDays: 100,
+    weeklyWorkouts: 3,
+    lives: 3,
+  });
+  const id: number = created.body.id;
+  try {
+    expect('создан', [created.status, created.body.kind], [200, 'fitness']);
+    expect('сроки', [created.body.dayNumber, created.body.daysTotal, created.body.endDate], [11, 100, day(89)]);
+
+    const my0 = await jget(`${base}/api/my/challenges`);
+    expect('виден в «Ещё доступно»', my0.available.some((c: any) => c.id === id), true);
+
+    expect('вступление', (await call('POST', `${base}/api/challenges/${id}/join`, {})).status, 200);
+    for (const route of ['me', 'leaderboard', 'freezes']) {
+      expect(`планочный ${route} -> 400`, (await call('GET', `${base}/api/challenges/${id}/${route}`)).status, 400);
+    }
+    expect('больничный -> 400', (await call('POST', `${base}/api/challenges/${id}/sick`, {})).status, 400);
+
+    const ov = await call('GET', `${base}/api/challenges/${id}/fitness`);
+    expect('сводка', [ov.status, ov.body.goal, ov.body.challenge.weekNumber, ov.body.challenge.weeksTotal], [200, null, 2, 15]);
+    expect('настройки', [ov.body.settings.weeklyWorkouts, ov.body.settings.lives], [3, 3]);
+
+    // анкета
+    const badHeight = await call('PUT', `${base}/api/body-profile`, { heightCm: 20 });
+    expect('рост вне диапазона -> 400', [badHeight.status, badHeight.body?.error], [400, 'bad_height']);
+    const profile = await call('PUT', `${base}/api/body-profile`, { heightCm: 180, birthYear: 1990, sex: 'male' });
+    expect('анкета', [profile.body.heightCm, profile.body.sex, profile.body.activityFactor], [180, 'male', 1.2]);
+    const partial = await call('PUT', `${base}/api/body-profile`, { shareBody: true });
+    expect('частичная правка не стирает рост', [partial.body.heightCm, partial.body.shareBody], [180, true]);
+
+    // цель
+    const goalUrl = `${base}/api/challenges/${id}/goal`;
+    const wrongWay = await call('PUT', goalUrl, { goalType: 'lose_weight', startWeightKg: 90, targetValue: 95 });
+    expect('цель не в ту сторону -> 400', [wrongWay.status, wrongWay.body?.error], [400, 'target_direction']);
+    const noStart = await call('PUT', goalUrl, { goalType: 'lose_fat', targetValue: 15 });
+    expect('цель без стартового замера -> 400', [noStart.status, noStart.body?.error], [400, 'bad_start']);
+    const goal = await call('PUT', goalUrl, {
+      goalType: 'lose_weight', startWeightKg: 90, startBodyFat: 24, targetValue: 80, dailyKcalTarget: 2200,
+    });
+    expect('цель сохранена', [goal.status, goal.body.goal.goalType, goal.body.goal.startDay], [200, 'lose_weight', day(0)]);
+    expect('точка отсчёта', [goal.body.progress.metric, goal.body.progress.start, goal.body.progress.target], ['weightKg', 90, 80]);
+    const regoal = await call('PUT', goalUrl, { goalType: 'lose_weight', startWeightKg: 90, targetValue: 78 });
+    expect('правка цели не сдвигает день старта', [regoal.body.goal.targetValue, regoal.body.goal.startDay], [78, day(0)]);
+
+    const my1 = await jget(`${base}/api/my/challenges`);
+    const card = my1.challenges.find((c: any) => c.id === id);
+    expect('карточка в «Моих»', [card.fitness.daysTotal, card.fitness.hasGoal, 'todayState' in card], [100, true, false]);
+
+    // первая цель кладёт стартовый замер в историю веса — первой точкой графика
+    const w0 = await jget(`${base}/api/weight`);
+    expect('стартовый замер в истории', [w0.latest.weightKg, w0.latest.bodyFat], [90, 24]);
+
+    // ручной вес: повтор на тот же момент обновляет запись, а не задваивает.
+    // Минута вперёд — чтобы замер был новее стартового (запас на расхождение часов допустим)
+    const measuredAt = new Date(Date.now() + 60_000).toISOString();
+    const w1 = await call('POST', `${base}/api/weight`, { weightKg: 88.4, bodyFat: 23.5, measuredAt });
+    const w2 = await call('POST', `${base}/api/weight`, { weightKg: 88.1, bodyFat: 23.5, measuredAt });
+    expect('ручной вес', [w1.status, w2.body.latest.weightKg, w2.body.latest.bodyFat], [200, 88.1, 23.5]);
+    expect('повтор не задвоил', w2.body.stats.count, w1.body.stats.count);
+    const badWeight = await call('POST', `${base}/api/weight`, { weightKg: 900 });
+    expect('вес вне диапазона -> 400', [badWeight.status, badWeight.body?.error], [400, 'bad_weight']);
+
+    // обхваты: одно значение вида на день
+    await call('PUT', `${base}/api/measurements`, { kind: 'waist', value: 92.4 });
+    const m2 = await call('PUT', `${base}/api/measurements`, { kind: 'waist', value: 91 });
+    const waist = m2.body.rows.filter((r: any) => r.kind === 'waist' && r.day === day(0));
+    expect('обхват за день один, значение исправлено', [waist.length, waist[0]?.value], [1, 91]);
+    const badKind = await call('PUT', `${base}/api/measurements`, { kind: 'ear', value: 5 });
+    expect('неизвестный вид замера -> 400', [badKind.status, badKind.body?.error], [400, 'bad_kind']);
+    const future = await call('PUT', `${base}/api/measurements`, { kind: 'waist', value: 90, day: day(3) });
+    expect('замер из будущего -> 400', [future.status, future.body?.error], [400, 'bad_day']);
+    const delM = await call('DELETE', `${base}/api/measurements/${waist[0].id}`);
+    expect('обхват удалён', delM.body.rows.some((r: any) => r.id === waist[0].id), false);
+
+    // админка
+    const ppl = await call('GET', `${admin}/${id}/participants`);
+    expect('участники', [ppl.body.rows.length, ppl.body.rows[0].goalType, ppl.body.rows[0].progress.target], [1, 'lose_weight', 78]);
+    const patched = await call('PATCH', `${admin}/${id}`, { lives: 2, joinOpen: false, durationDays: '' });
+    expect('правка настроек', [patched.body.lives, patched.body.joinOpen, patched.body.daysTotal], [2, false, null]);
+    expect('планка отсюда не правится', (await call('PATCH', `${admin}/1`, { lives: 2 })).status, 400);
+
+    // закрытый набор: второй человек челлендж не видит и вступить не может
+    const other = { ...HEADERS, 'X-Dev-Telegram-Id': '998' };
+    const otherList = await call('GET', `${base}/api/my/challenges`, undefined, other);
+    expect('закрытый набор скрыт', otherList.body.available.some((c: any) => c.id === id), false);
+    const otherJoin = await call('POST', `${base}/api/challenges/${id}/join`, {}, other);
+    expect('вступление закрыто -> 403', [otherJoin.status, otherJoin.body?.error], [403, 'join_closed']);
+    expect('чужая сводка -> 403', (await call('GET', `${base}/api/challenges/${id}/fitness`, undefined, other)).status, 403);
+  } finally {
+    // прогон не должен оставлять после себя челленджи: каскад уносит участия и цели
+    await prisma.challenge.delete({ where: { id } }).catch(() => undefined);
+    await cleanManual();
+  }
 }
 
 main().catch((e) => {

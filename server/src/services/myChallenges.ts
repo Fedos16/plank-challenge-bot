@@ -3,6 +3,7 @@ import { challengeDayNumber, dateToDay, todayDay } from '../lib/time';
 import { getBank } from './bank';
 import { can } from './challenge';
 import { getParticipantDayState, type DayState } from './dayStatus';
+import { getFitnessSummary, type FitnessSummary } from './fitness/overview';
 import { getParticipationStreaks } from './streaks';
 import { getWeightSummary, type WeightSummary } from './weight';
 
@@ -19,6 +20,8 @@ export interface MyChallengeSummary {
   bank?: number;
   /** Только для группы взвешиваний: свой вес и динамика. */
   weight?: WeightSummary;
+  /** Только для фитнес-челленджа: день из скольких и прогресс к личной цели. */
+  fitness?: FitnessSummary;
 }
 
 /** Сводка по всем активным челленджам, в которых участвует пользователь. */
@@ -45,6 +48,11 @@ export async function getMyChallenges(userId: number): Promise<MyChallengeSummar
     // В группе взвешиваний нет ни дней, ни серий, ни банка — только свой вес
     if (ch.kind === 'weight') {
       result.push({ ...base, weight: await getWeightSummary(userId) });
+      continue;
+    }
+
+    if (can(ch, 'goals')) {
+      result.push({ ...base, fitness: await getFitnessSummary(ch, p) });
       continue;
     }
 

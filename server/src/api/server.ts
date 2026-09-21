@@ -5,6 +5,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { userRoutes } from './userRoutes';
 import { adminRoutes } from './adminRoutes';
+import { adminChallengesRoutes } from './adminChallengesRoutes';
+import { fitnessRoutes } from './fitnessRoutes';
 import { ingestRoutes } from './ingestRoutes';
 
 export function resolveWebDist(): string {
@@ -32,7 +34,10 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.get('/health', async () => ({ ok: true }));
 
   await app.register(userRoutes, { prefix: '/api' });
+  await app.register(fitnessRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api/admin' });
+  // Челленджи по :id — всё, чего может быть несколько (планка одна и живёт в adminRoutes)
+  await app.register(adminChallengesRoutes, { prefix: '/api/admin/challenges' });
   // Данные с умных весов: приходят с телефона по личному токену, без initData Telegram
   await app.register(ingestRoutes, { prefix: '/api/ingest' });
 

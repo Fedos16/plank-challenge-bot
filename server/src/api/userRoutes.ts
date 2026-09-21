@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { Challenge, Participation } from '@prisma/client';
+import type { Challenge } from '@prisma/client';
 import { authPreHandler } from './auth';
+import { resolveParticipant, resolveWith } from './resolve';
 import { getBank } from '../services/bank';
 import { getProfile } from '../services/profile';
 import {
@@ -20,30 +21,29 @@ import {
   listPersonal,
 } from '../services/personal';
 import {
+  addManualWeight,
   assignProfile,
   deleteEntry,
   getWeightOverview,
   rotateScaleToken,
 } from '../services/weight';
 import {
-  can,
+  challengeTimeline,
   getChallengeById,
   listJoinableChallenges,
-  type Capability,
 } from '../services/challenge';
-import {
-  displayName,
-  ensureParticipation,
-  getActiveParticipation,
-  leaveChallenge,
-} from '../services/users';
+import { displayName, ensureParticipation, leaveChallenge } from '../services/users';
 import { reportSick } from '../services/sick';
 import { getFreezeOverview, useFreeze } from '../services/freezes';
 import { challengeDayNumber, dateToDay, todayDay } from '../lib/time';
 
 function challengePublicDTO(ch: Challenge, bank: number) {
   const today = todayDay(ch.timezone);
+  const timeline = challengeTimeline(ch);
   return {
+    endDate: timeline.endDate,
+    daysTotal: timeline.daysTotal,
+    phase: timeline.phase,
     id: ch.id,
     key: ch.key,
     kind: ch.kind,
@@ -67,43 +67,7 @@ function challengePublicDTO(ch: Challenge, bank: number) {
 export async function userRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authPreHandler);
 
-  /** Резолвит челлендж по :id и активное участие текущего пользователя. */
-  async function resolve(
-    req: FastifyRequest,
-    reply: FastifyReply,
-  ): Promise<{ challenge: Challenge; participation: Participation } | null> {
-    const id = Number((req.params as { id: string }).id);
-    if (!Number.isInteger(id) || id <= 0) {
-      reply.code(400).send({ error: 'bad_id' });
-      return null;
-    }
-    const challenge = await getChallengeById(id);
-    if (!challenge || !challenge.isActive) {
-      reply.code(404).send({ error: 'challenge_not_found' });
-      return null;
-    }
-    const participation = await getActiveParticipation(id, req.ctx!.user.id);
-    if (!participation) {
-      reply.code(403).send({ error: 'not_participant' });
-      return null;
-    }
-    return { challenge, participation };
-  }
-
-  /** То же, но только для челленджей, которые умеют `cap`: остальным — 400 not_applicable. */
-  async function resolveWith(
-    cap: Capability,
-    req: FastifyRequest,
-    reply: FastifyReply,
-  ): Promise<{ challenge: Challenge; participation: Participation } | null> {
-    const r = await resolve(req, reply);
-    if (!r) return null;
-    if (!can(r.challenge, cap)) {
-      reply.code(400).send({ error: 'not_applicable' });
-      return null;
-    }
-    return r;
-  }
+  const resolve = resolveParticipant;
 
   /** Только для челленджей с планкой: кружки, штрафы, серии, больничные. */
   const resolvePlank = (req: FastifyRequest, reply: FastifyReply) =>
@@ -140,6 +104,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     if (!challenge || !challenge.isActive) {
       return reply.code(404).send({ error: 'challenge_not_found' });
     }
+    if (!challenge.joinOpen) return reply.code(403).send({ error: 'join_closed' });
     await ensureParticipation(challenge.id, req.ctx!.user.id);
     return { ok: true, id: challenge.id };
   });
@@ -293,6 +258,23 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- Вес с умных весов (только владелец) ----
   app.get('/weight', async (req) => getWeightOverview(req.ctx!.user.id));
+
+  // Взвешивание вручную — для тех, у кого нет умных весов
+  app.post('/weight', async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const num = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v));
+    const measuredAt = typeof body.measuredAt === 'string' ? new Date(body.measuredAt) : undefined;
+
+    const result = await addManualWeight(req.ctx!.user.id, {
+      weightKg: Number(body.weightKg),
+      bodyFat: num(body.bodyFat),
+      water: num(body.water),
+      muscle: num(body.muscle),
+      measuredAt,
+    });
+    if (typeof result === 'string') return reply.code(400).send({ error: result });
+    return getWeightOverview(req.ctx!.user.id);
+  });
 
   // Перевыпуск токена: старый адрес вебхука сразу перестаёт приниматься
   app.post('/weight/token', async (req) => {
