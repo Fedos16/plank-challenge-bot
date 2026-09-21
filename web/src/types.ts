@@ -598,3 +598,76 @@ export interface IntegrationsResponse {
   connected: IntegrationInfo[];
   hubs: HubInfo[];
 }
+
+// ---------- Питание ----------
+
+export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
+/** Продукт справочника: пищевая ценность на 100 г. */
+export interface FoodProduct {
+  id: number;
+  name: string;
+  brand: string | null;
+  kcal100: number;
+  protein100: number | null;
+  fat100: number | null;
+  carbs100: number | null;
+  /** Типичная порция, если есть: «1 шт.» = 55 г. */
+  servingGrams: number | null;
+  servingLabel: string | null;
+  source: string;
+  /** Только у «недавних»: сколько граммов человек вводил в прошлый раз. */
+  lastGrams?: number | null;
+}
+
+export interface FoodEntry {
+  id: number;
+  meal: Meal | null;
+  title: string;
+  kcal: number;
+  protein: number | null;
+  fat: number | null;
+  carbs: number | null;
+  grams: number | null;
+  productId: number | null;
+  eatenAt: string;
+}
+
+export interface FoodDay {
+  day: string;
+  isToday: boolean;
+  entries: FoodEntry[];
+  eaten: { kcal: number; protein: number; fat: number; carbs: number };
+  workoutKcal: number;
+  energy: {
+    bmr: number | null;
+    /** Расход без тренировок: базовый обмен × бытовая активность. */
+    baseline: number | null;
+    missing: ('sex' | 'weight' | 'height' | 'birthYear')[];
+  };
+  target: number | null;
+  /** Съедено − расход. Минус — дефицит. null — анкета не заполнена. */
+  balance: number | null;
+  week: { day: string; eaten: number; workoutKcal: number }[];
+  meals: Meal[];
+}
+
+export interface FoodEntryInput {
+  clientId: string;
+  day?: string;
+  meal?: Meal | null;
+  productId?: number;
+  grams?: number;
+  kcal?: number;
+  title?: string;
+}
+
+export interface FoodProductInput {
+  name: string;
+  kcal100: number;
+  protein100?: number | null;
+  fat100?: number | null;
+  carbs100?: number | null;
+  servingGrams?: number | null;
+  servingLabel?: string | null;
+}

@@ -7,6 +7,7 @@ import { userRoutes } from './userRoutes';
 import { adminRoutes } from './adminRoutes';
 import { adminChallengesRoutes } from './adminChallengesRoutes';
 import { fitnessRoutes } from './fitnessRoutes';
+import { foodRoutes } from './foodRoutes';
 import { ingestRoutes } from './ingestRoutes';
 import { integrationRoutes } from './integrationRoutes';
 import { oauthRoutes } from './oauthRoutes';
@@ -42,6 +43,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   // Челленджи по :id — всё, чего может быть несколько (планка одна и живёт в adminRoutes)
   await app.register(adminChallengesRoutes, { prefix: '/api/admin/challenges' });
   await app.register(integrationRoutes, { prefix: '/api' });
+  await app.register(foodRoutes, { prefix: '/api' });
   // Данные с умных весов: приходят с телефона по личному токену, без initData Telegram
   await app.register(ingestRoutes, { prefix: '/api/ingest' });
   // Возврат из OAuth (браузер, доверяем подписанному state) и вебхуки провайдеров (подпись тела)

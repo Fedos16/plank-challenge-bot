@@ -185,6 +185,7 @@ async function main() {
   await gameScenario(base);
   await whoopScenario(base);
   await hubsScenario(base);
+  await foodScenario(base);
 
   await app.close();
   console.log('SMOKE OK');
@@ -895,6 +896,99 @@ async function hubsScenario(base: string) {
     expect('видно, когда хаб последний раз присылал данные', typeof seen.lastEventAt, 'string');
   } finally {
     await prisma.challenge.delete({ where: { id } }).catch(() => undefined);
+    await clean();
+  }
+}
+
+/** Питание: поиск по справочнику, запись по продукту и цифрой, свой продукт, баланс калорий. */
+async function foodScenario(base: string) {
+  console.log('--- питание и баланс калорий ---');
+  const { prisma } = await import('../src/lib/prisma');
+  const { randomUUID } = await import('node:crypto');
+  const clean = async () => {
+    await prisma.foodEntry.deleteMany({ where: { user: { telegramId: 999n } } });
+    await prisma.foodProduct.deleteMany({ where: { source: 'custom', name: { startsWith: 'Smoke' } } });
+    await prisma.workout.deleteMany({ where: { user: { telegramId: 999n } } });
+    await prisma.weightEntry.deleteMany({ where: { user: { telegramId: 999n }, sourceOwnerId: null } });
+  };
+  await clean();
+  const today = mskDay(0);
+  const search = async (q: string) => (await jget(`${base}/api/food/search?q=${encodeURIComponent(q)}`)).products as any[];
+
+  try {
+    // --- справочник ---
+    const seeded = await prisma.foodProduct.count({ where: { source: 'seed' } });
+    expect('справочник засеян', seeded > 250, true);
+    expect('поиск: начало названия выше', (await search('гречка'))[0].name, 'Гречка варёная');
+    expect('поиск: слова в любом порядке', (await search('грудка кур')).some((p) => p.name === 'Куриная грудка готовая'), true);
+    expect('поиск: «ё» и регистр не важны', (await search('СЕМГА'))[0].name, 'Сёмга слабосолёная');
+    expect('поиск: короткий запрос пуст', (await search('г')).length, 0);
+    expect('поиск: ничего не нашлось', (await search('абракадабра')).length, 0);
+
+    // --- запись по продукту: калории и БЖУ считаются из граммовки ---
+    const grechka = (await search('гречка варёная'))[0];
+    const clientId = randomUUID();
+    const add = (body: Record<string, unknown>) => call('POST', `${base}/api/food/entries`, { clientId: randomUUID(), ...body });
+    const byProduct = await add({ clientId, productId: grechka.id, grams: 250, meal: 'lunch' });
+    const entry = byProduct.body.entries[0];
+    expect('250 г гречки', [byProduct.status, entry.title, entry.kcal, entry.protein, entry.grams], [200, 'Гречка варёная', 275, 10.5, 250]);
+    const dup = await call('POST', `${base}/api/food/entries`, { clientId, productId: grechka.id, grams: 250 });
+    expect('повторная отправка формы не задваивает', dup.body.entries.length, 1);
+
+    // --- запись цифрой ---
+    const quick = await add({ kcal: 640, title: 'Бизнес-ланч' });
+    expect('запись цифрой', [quick.body.eaten.kcal, quick.body.entries[1].title, quick.body.entries[1].protein], [915, 'Бизнес-ланч', null]);
+    expect('без названия — «Приём пищи»', (await add({ kcal: 100 })).body.entries[2].title, 'Приём пищи');
+
+    // --- валидация ---
+    expect('граммовка вне диапазона -> 400', (await add({ productId: grechka.id, grams: 0 })).body?.error, 'bad_grams');
+    expect('калории вне диапазона -> 400', (await add({ kcal: 50000 })).body?.error, 'bad_food_kcal');
+    expect('еда из будущего -> 400', (await add({ kcal: 100, day: mskDay(2) })).body?.error, 'bad_food_day');
+    expect('неизвестный приём пищи -> 400', (await add({ kcal: 100, meal: 'brunch' })).body?.error, 'bad_meal');
+    expect('нет такого продукта -> 404', (await add({ productId: 99999999, grams: 100 })).status, 404);
+
+    // --- свой продукт виден всем ---
+    const custom = await call('POST', `${base}/api/food/products`, {
+      name: 'Smoke сырники бабушкины', kcal100: 230, protein100: 15, fat100: 11, carbs100: 18, servingGrams: 70, servingLabel: '1 шт.',
+    });
+    expect('свой продукт', [custom.status, custom.body.source, custom.body.servingLabel], [200, 'custom', '1 шт.']);
+    expect('БЖУ больше 100 г на 100 г -> 400', (await call('POST', `${base}/api/food/products`, { name: 'Smoke мусор', kcal100: 100, protein100: 60, fat100: 50 })).body?.error, 'bad_macros');
+    const other = { ...HEADERS, 'X-Dev-Telegram-Id': '998' };
+    const seenByOther = await call('GET', `${base}/api/food/search?q=${encodeURIComponent('smoke сырники')}`, undefined, other);
+    expect('свой продукт находит и другой участник', seenByOther.body.products.length, 1);
+
+    await add({ productId: custom.body.id, grams: 140 });
+    const recent = (await jget(`${base}/api/food/recent`)).products;
+    expect('недавние: последний продукт первым, с граммовкой', [recent[0].name, recent[0].lastGrams], ['Smoke сырники бабушкины', 140]);
+
+    // --- баланс: без анкеты расчёта нет, с анкетой — базовый обмен × 1,2 + тренировки ---
+    await prisma.userBodyProfile.deleteMany({ where: { user: { telegramId: 999n } } });
+    const noProfile = await jget(`${base}/api/food/day`);
+    expect('без анкеты баланса нет', [noProfile.balance, noProfile.energy.missing.includes('height')], [null, true]);
+
+    await call('PUT', `${base}/api/body-profile`, { heightCm: 180, birthYear: new Date().getFullYear() - 36, sex: 'male' });
+    await call('POST', `${base}/api/weight`, { weightKg: 85 });
+    await call('POST', `${base}/api/workouts`, {
+      // минуту назад, а не час: сразу после полуночи час назад — это ещё вчера
+      clientId: randomUUID(), sport: 'run', startedAt: new Date(Date.now() - 60_000).toISOString(), durationMin: 40, kcal: 450,
+    });
+    const day = await jget(`${base}/api/food/day`);
+    const eaten = 275 + 640 + 100 + 322; // гречка + ланч + перекус + 140 г сырников
+    expect('съедено за день', [day.day, day.isToday, day.eaten.kcal], [today, true, eaten]);
+    expect('расход: Миффлин — Сан-Жеор × 1,2 и тренировки', [day.energy.bmr, day.energy.baseline, day.workoutKcal], [1800, 2160, 450]);
+    expect('баланс = съедено − (расход + тренировки)', day.balance, eaten - (2160 + 450));
+    expect('неделя для графика', [day.week.length, day.week[6].day, day.week[6].eaten, day.week[6].workoutKcal], [7, today, eaten, 450]);
+
+    // --- приватность и удаление ---
+    const foreign = await call('DELETE', `${base}/api/food/entries/${entry.id}`, undefined, other);
+    expect('чужую запись не удалить', foreign.status, 404);
+    expect('чужой дневник пуст', (await call('GET', `${base}/api/food/day`, undefined, other)).body.entries.length, 0);
+    await call('DELETE', `${base}/api/food/entries/${entry.id}`);
+    expect('удаление записи', (await jget(`${base}/api/food/day`)).eaten.kcal, eaten - 275);
+
+    const yesterday = await add({ kcal: 300, day: mskDay(-1) });
+    expect('запись задним числом попадает в свой день', [yesterday.body.day, yesterday.body.eaten.kcal], [mskDay(-1), 300]);
+  } finally {
     await clean();
   }
 }

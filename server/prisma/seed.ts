@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -128,6 +130,52 @@ async function main() {
 
   console.log(`Сид готов. Челлендж #${challenge.id} «${challenge.title}», старт ${startDate.toISOString().slice(0, 10)}.`);
   console.log(`Группа взвешиваний #${weight.id} «${weight.title}» готова.`);
+
+  // Сид идёт при КАЖДОМ старте контейнера, в цепочке `db push && seed && node`: исключение
+  // здесь не дало бы приложению подняться. Справочник продуктов — не повод ронять прод.
+  try {
+    await seedFoods();
+  } catch (err) {
+    console.error('Справочник продуктов не обновлён (приложение стартует без него):', err);
+  }
+}
+
+/** [слаг, название, ккал, белки, жиры, углеводы, граммов в порции, подпись порции] — всё на 100 г. */
+type FoodRow = [string, string, number, number, number, number, number | null, string | null];
+
+/**
+ * Имя для поиска: нижний регистр, «ё» → «е». Дублирует normalizeFoodName из src/services/food.ts —
+ * сид не может его импортировать: в рантайм-образ попадает каталог prisma/, но не src/.
+ */
+function normalizeFoodName(name: string): string {
+  return name.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Базовый справочник продуктов. Новые позиции добавляются, изменившиеся — обновляются (цифры
+ * в файле иногда правятся), удалённые из файла остаются в базе: на них ссылаются записи дневника.
+ */
+async function seedFoods(): Promise<void> {
+  const file = path.join(__dirname, 'data', 'foods.ru.json');
+  const rows = JSON.parse(fs.readFileSync(file, 'utf8')) as FoodRow[];
+
+  const existing = await prisma.foodProduct.findMany({ where: { source: 'seed' } });
+  const bySlug = new Map(existing.map((p) => [p.externalId, p]));
+
+  const fresh = [];
+  let updated = 0;
+  for (const [slug, name, kcal100, protein100, fat100, carbs100, servingGrams, servingLabel] of rows) {
+    const data = { name, nameLc: normalizeFoodName(name), kcal100, protein100, fat100, carbs100, servingGrams, servingLabel };
+    const current = bySlug.get(slug);
+    if (!current) {
+      fresh.push({ source: 'seed', externalId: slug, ...data });
+    } else if ((Object.keys(data) as (keyof typeof data)[]).some((k) => current[k] !== data[k])) {
+      await prisma.foodProduct.update({ where: { id: current.id }, data });
+      updated += 1;
+    }
+  }
+  if (fresh.length) await prisma.foodProduct.createMany({ data: fresh, skipDuplicates: true });
+  console.log(`Справочник продуктов: всего ${rows.length}, добавлено ${fresh.length}, обновлено ${updated}.`);
 }
 
 main()

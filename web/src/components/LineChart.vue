@@ -8,6 +8,8 @@ const props = defineProps<{
   unit: string;
   /** Горизонтальная пунктирная линия — например, целевой вес. */
   target?: number | null;
+  /** Знаков после запятой в подписи диапазона: вес — один, калории — ноль. */
+  digits?: number;
 }>();
 
 const W = 320;
@@ -15,7 +17,8 @@ const H = 110;
 const PAD = 12;
 
 function format(n: number): string {
-  return n.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const digits = props.digits ?? 1;
+  return n.toLocaleString('ru-RU', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 const chart = computed(() => {

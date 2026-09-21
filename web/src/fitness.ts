@@ -112,6 +112,14 @@ export function hearts(left: number, total: number): string {
 }
 
 const ERROR_TEXT: Record<string, string> = {
+  bad_food_day: 'Дата не может быть в будущем',
+  bad_meal: 'Выберите приём пищи',
+  bad_grams: 'Граммы — от 1 до 5000',
+  bad_food_kcal: 'Калории — от 0 до 10 000',
+  product_not_found: 'Продукт не найден',
+  bad_name: 'Название — от 2 до 80 символов',
+  bad_macros: 'Проверьте БЖУ: на 100 г их не может быть больше 100 г',
+  bad_serving: 'Проверьте вес порции',
   whoop_disabled: 'Интеграция с WHOOP на сервере не настроена',
   bad_sport: 'Выберите вид тренировки',
   bad_started_at: 'Проверьте дату: не в будущем и не старше года',

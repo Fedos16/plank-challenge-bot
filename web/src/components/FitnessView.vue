@@ -10,11 +10,12 @@ import BodyTab from './BodyTab.vue';
 import WorkoutsTab from './WorkoutsTab.vue';
 import FitnessLeaderboard from './FitnessLeaderboard.vue';
 import ConnectionsCard from './ConnectionsCard.vue';
+import FoodTab from './FoodTab.vue';
 
 const props = defineProps<{ challengeId: number }>();
 const emit = defineEmits<{ (e: 'back'): void; (e: 'left'): void }>();
 
-type Sub = 'overview' | 'workouts' | 'board' | 'body' | 'more';
+type Sub = 'overview' | 'workouts' | 'food' | 'board' | 'body' | 'more';
 const sub = ref<Sub>('overview');
 const data = ref<FitnessOverview | null>(null);
 const loading = ref(true);
@@ -160,6 +161,7 @@ watch(() => props.challengeId, load);
         <div class="subtabs">
           <button :class="{ active: sub === 'overview' }" @click="sub = 'overview'">Обзор</button>
           <button :class="{ active: sub === 'workouts' }" @click="sub = 'workouts'">Тренировки</button>
+          <button :class="{ active: sub === 'food' }" @click="sub = 'food'">Еда</button>
           <button :class="{ active: sub === 'board' }" @click="sub = 'board'">Рейтинг</button>
           <button :class="{ active: sub === 'body' }" @click="sub = 'body'">Тело</button>
           <button :class="{ active: sub === 'more' }" @click="sub = 'more'">Ещё</button>
@@ -268,6 +270,9 @@ watch(() => props.challengeId, load);
 
         <!-- ТРЕНИРОВКИ -->
         <WorkoutsTab v-else-if="sub === 'workouts'" :challenge-id="challengeId" :overview="data" @changed="refresh" />
+
+        <!-- ЕДА: дневник личный, другим участникам не виден -->
+        <FoodTab v-else-if="sub === 'food'" />
 
         <!-- РЕЙТИНГ -->
         <FitnessLeaderboard v-else-if="sub === 'board'" :challenge-id="challengeId" :overview="data" />

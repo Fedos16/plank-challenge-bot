@@ -12,6 +12,10 @@ import type {
   FeedItem,
   FitnessLeaderboardRow,
   FitnessOverview,
+  FoodDay,
+  FoodEntryInput,
+  FoodProduct,
+  FoodProductInput,
   FreezeOverview,
   GoalInput,
   HubInfo,
@@ -148,6 +152,16 @@ export const api = {
   addWorkout: (data: WorkoutInput) =>
     request<{ ok: boolean; id: number }>('/workouts', { method: 'POST', body: JSON.stringify(data) }),
   deleteWorkout: (id: number) => request<{ ok: boolean }>(`/workouts/${id}`, { method: 'DELETE' }),
+
+  // --- питание ---
+  getFoodDay: (day?: string) => request<FoodDay>(`/food/day${day ? `?day=${day}` : ''}`),
+  addFoodEntry: (data: FoodEntryInput) =>
+    request<FoodDay>('/food/entries', { method: 'POST', body: JSON.stringify(data) }),
+  deleteFoodEntry: (id: number) => request<{ ok: boolean }>(`/food/entries/${id}`, { method: 'DELETE' }),
+  searchFood: (q: string) => request<{ products: FoodProduct[] }>(`/food/search?q=${encodeURIComponent(q)}`),
+  getRecentFood: () => request<{ products: FoodProduct[] }>('/food/recent'),
+  createFoodProduct: (data: FoodProductInput) =>
+    request<FoodProduct>('/food/products', { method: 'POST', body: JSON.stringify(data) }),
 
   // --- подключения источников тренировок ---
   getIntegrations: () => request<IntegrationsResponse>('/integrations'),

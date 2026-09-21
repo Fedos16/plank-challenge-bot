@@ -32,6 +32,7 @@ model User {
   measurements       BodyMeasurement[]
   workouts           Workout[]
   integrations       Integration[]
+  foodEntries        FoodEntry[]
 
   @@index([scaleToken])
 }
@@ -428,4 +429,59 @@ model Integration {
 
   @@unique([userId, provider])
   @@unique([provider, externalUserId])
+}
+
+// Справочник продуктов: пищевая ценность на 100 г. Общий для всех: базовый набор приходит
+// сидом, «свои» продукты участники добавляют сами, найденное в Open Food Facts кэшируется.
+model FoodProduct {
+  id              Int      @id @default(autoincrement())
+  source          String // seed | custom | off
+  /// seed: слаг; off: штрихкод; custom: случайный id. Вместе с source — ключ для upsert сида
+  externalId      String
+  name            String
+  /// Имя для поиска: нижний регистр, «ё» → «е»
+  nameLc          String
+  brand           String?
+  kcal100         Float
+  protein100      Float?
+  fat100          Float?
+  carbs100        Float?
+  /// Типичная порция, если у продукта она есть: «1 шт.» = 55 г для яйца
+  servingGrams    Float?
+  servingLabel    String?
+  createdByUserId Int?
+  isHidden        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  entries FoodEntry[]
+
+  @@unique([source, externalId])
+  @@index([nameLc])
+}
+
+// Запись дневника питания. Либо просто число калорий, либо продукт с граммовкой —
+// тогда калории и БЖУ посчитаны при записи и от правок справочника потом не зависят.
+model FoodEntry {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  /// Логический день с клиента: ночной перекус в 00:30 человек сам относит к нужному дню
+  day       DateTime @db.Date
+  eatenAt   DateTime @default(now())
+  meal      String? // breakfast | lunch | dinner | snack
+  title     String
+  kcal      Int
+  protein   Float?
+  fat       Float?
+  carbs     Float?
+  grams     Float?
+  productId Int?
+  /// Идентификатор формы: повторная отправка не создаёт вторую запись
+  clientId  String
+  createdAt DateTime @default(now())
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product FoodProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, clientId])
+  @@index([userId, day])
 }
