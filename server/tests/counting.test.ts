@@ -1,0 +1,118 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  assignDuplicates,
+  classifyWorkouts,
+  countInWindow,
+  overlapRatio,
+  type WorkoutLike,
+} from '../src/services/fitness/counting';
+
+let nextId = 1;
+/** Тренировка: время в UTC, длительность в минутах. */
+function w(startIso: string, minutes: number, extra: Partial<WorkoutLike> = {}): WorkoutLike {
+  return {
+    id: nextId++,
+    source: 'manual',
+    startedAt: new Date(startIso),
+    durationSec: minutes * 60,
+    excluded: false,
+    duplicateOfId: null,
+    ...extra,
+  };
+}
+
+const RULES = { minWorkoutMin: 20, maxWorkoutsPerDay: 1, tz: 'Europe/Moscow' };
+
+test('overlapRatio: доля от более короткой записи', () => {
+  const hour = w('2026-10-05T07:00:00Z', 60);
+  assert.equal(overlapRatio(hour, w('2026-10-05T07:10:00Z', 40)), 1); // целиком внутри
+  assert.equal(overlapRatio(hour, w('2026-10-05T07:30:00Z', 60)), 0.5);
+  assert.equal(overlapRatio(hour, w('2026-10-05T08:00:00Z', 30)), 0); // встык — не пересечение
+  assert.equal(overlapRatio(hour, w('2026-10-05T12:00:00Z', 30)), 0);
+});
+
+test('assignDuplicates: браслет главнее ручной записи, даже если она внесена раньше', () => {
+  const manual = w('2026-10-05T07:05:00Z', 50);
+  const whoop = w('2026-10-05T07:00:00Z', 55, { source: 'whoop' });
+  const result = assignDuplicates([manual, whoop]);
+  assert.equal(result.get(whoop.id), null);
+  assert.equal(result.get(manual.id), whoop.id);
+});
+
+test('assignDuplicates: хаб главнее агрегатора, при равенстве — более ранняя запись', () => {
+  const strava = w('2026-10-05T07:00:00Z', 60, { source: 'strava' });
+  const hae = w('2026-10-05T07:00:00Z', 60, { source: 'hae' });
+  assert.equal(assignDuplicates([strava, hae]).get(strava.id), hae.id);
+
+  const first = w('2026-10-06T07:00:00Z', 60);
+  const second = w('2026-10-06T07:00:00Z', 60);
+  const result = assignDuplicates([second, first]);
+  assert.deepEqual([result.get(first.id), result.get(second.id)], [null, first.id]);
+});
+
+test('assignDuplicates: слабое перекрытие и разные дни — не дубли', () => {
+  const morning = w('2026-10-05T07:00:00Z', 60);
+  const tail = w('2026-10-05T07:50:00Z', 60); // перекрытие 10 минут из 60
+  const evening = w('2026-10-05T17:00:00Z', 45, { source: 'whoop' });
+  const result = assignDuplicates([morning, tail, evening]);
+  assert.deepEqual([...result.values()], [null, null, null]);
+});
+
+test('assignDuplicates: снятая админом запись остаётся основной для своего дубля', () => {
+  const whoop = w('2026-10-05T07:00:00Z', 60, { source: 'whoop', excluded: true });
+  const manual = w('2026-10-05T07:00:00Z', 60);
+  assert.equal(assignDuplicates([whoop, manual]).get(manual.id), whoop.id);
+});
+
+test('classifyWorkouts: короткая, дубль и снятая в зачёт не идут', () => {
+  const short = w('2026-10-05T07:00:00Z', 19);
+  const exact = w('2026-10-06T07:00:00Z', 20);
+  const dup = w('2026-10-07T07:00:00Z', 60, { duplicateOfId: 999 });
+  const removed = w('2026-10-08T07:00:00Z', 60, { excluded: true });
+  const v = classifyWorkouts([short, exact, dup, removed], RULES);
+  assert.deepEqual(
+    [v.get(short.id), v.get(exact.id), v.get(dup.id), v.get(removed.id)],
+    ['too_short', 'counted', 'duplicate', 'excluded'],
+  );
+});
+
+test('classifyWorkouts: лимит в день — в зачёт идёт самая ранняя', () => {
+  const evening = w('2026-10-05T16:00:00Z', 40);
+  const morning = w('2026-10-05T06:00:00Z', 40);
+  const v = classifyWorkouts([evening, morning], RULES);
+  assert.deepEqual([v.get(morning.id), v.get(evening.id)], ['counted', 'day_limit']);
+
+  const two = classifyWorkouts([evening, morning], { ...RULES, maxWorkoutsPerDay: 2 });
+  assert.deepEqual([two.get(morning.id), two.get(evening.id)], ['counted', 'counted']);
+});
+
+test('classifyWorkouts: короткая тренировка не съедает дневной лимит', () => {
+  const short = w('2026-10-05T06:00:00Z', 5);
+  const real = w('2026-10-05T16:00:00Z', 40);
+  const v = classifyWorkouts([short, real], RULES);
+  assert.deepEqual([v.get(short.id), v.get(real.id)], ['too_short', 'counted']);
+});
+
+test('classifyWorkouts: день считается в поясе челленджа', () => {
+  // 22:30 UTC 5 октября — это уже 01:30 6 октября по Москве: две тренировки в разные дни
+  const lateNight = w('2026-10-05T22:30:00Z', 40);
+  const sameUtcDay = w('2026-10-05T10:00:00Z', 40);
+  const v = classifyWorkouts([lateNight, sameUtcDay], RULES);
+  assert.deepEqual([v.get(lateNight.id), v.get(sameUtcDay.id)], ['counted', 'counted']);
+});
+
+test('countInWindow: считает только засчитанные и только внутри окна', () => {
+  const window = { start: '2026-10-05', end: '2026-10-11', days: 7 };
+  const workouts = [
+    w('2026-10-04T10:00:00Z', 40), // до окна
+    w('2026-10-05T10:00:00Z', 40),
+    w('2026-10-05T16:00:00Z', 40), // лимит дня
+    w('2026-10-07T10:00:00Z', 10), // короткая
+    w('2026-10-11T20:30:00Z', 40), // 23:30 по Москве — последний день окна
+    w('2026-10-11T21:30:00Z', 40), // 00:30 12-го по Москве — уже следующая неделя
+  ];
+  const { done, byDay } = countInWindow(workouts, RULES, window);
+  assert.equal(done, 2);
+  assert.deepEqual([...byDay.entries()], [['2026-10-05', 1], ['2026-10-11', 1]]);
+});

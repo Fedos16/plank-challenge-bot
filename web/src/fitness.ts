@@ -1,5 +1,5 @@
 import { ApiError } from './api';
-import type { GoalMetric, GoalType, MeasurementKind } from './types';
+import type { GoalMetric, GoalType, MeasurementKind, Verdict } from './types';
 
 export const GOAL_LABEL: Record<GoalType, string> = {
   lose_weight: 'Похудеть',
@@ -40,7 +40,84 @@ export const MEASUREMENT_LABEL: Record<MeasurementKind, string> = {
 
 export const MEASUREMENT_KINDS = Object.keys(MEASUREMENT_LABEL) as MeasurementKind[];
 
+/** Виды активности для ручного ввода; ключи совпадают с серверным списком SPORTS. */
+export const SPORT_LABEL: Record<string, string> = {
+  strength: 'Силовая',
+  run: 'Бег',
+  walk: 'Ходьба',
+  cycling: 'Велосипед',
+  swim: 'Плавание',
+  hiit: 'HIIT / кроссфит',
+  yoga: 'Йога / растяжка',
+  team: 'Командный спорт',
+  racket: 'Теннис / падел',
+  martial: 'Единоборства',
+  ski: 'Лыжи / сноуборд',
+  other: 'Другое',
+};
+
+export const SPORT_EMOJI: Record<string, string> = {
+  strength: '🏋️',
+  run: '🏃',
+  walk: '🚶',
+  cycling: '🚴',
+  swim: '🏊',
+  hiit: '🔥',
+  yoga: '🧘',
+  team: '⚽',
+  racket: '🎾',
+  martial: '🥊',
+  ski: '⛷️',
+  other: '💪',
+};
+
+/** Название тренировки: свой вид — по справочнику, присланный устройством — как есть. */
+export function sportTitle(w: { sport: string; sportRaw: string | null }): string {
+  return SPORT_LABEL[w.sport] ?? w.sportRaw ?? w.sport;
+}
+
+export const VERDICT_LABEL: Record<Verdict, string> = {
+  counted: 'в зачёте',
+  too_short: 'короче минимума',
+  duplicate: 'дубль',
+  excluded: 'снята админом',
+  day_limit: 'лимит дня',
+};
+
+export const SOURCE_LABEL: Record<string, string> = {
+  manual: 'вручную',
+  whoop: 'WHOOP',
+  hae: 'Apple Health',
+  health_connect: 'Health Connect',
+  strava: 'Strava',
+};
+
+/**
+ * Идентификатор формы для идемпотентной отправки. randomUUID есть не во всех WebView
+ * (нужен secure context и свежий движок), поэтому с запасным вариантом.
+ */
+export function newClientId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const rand = () => Math.random().toString(36).slice(2, 10);
+  return `${Date.now().toString(36)}-${rand()}-${rand()}`;
+}
+
+/** Жизни сердечками: оставшиеся красные, потерянные чёрные. */
+export function hearts(left: number, total: number): string {
+  return '❤️'.repeat(Math.max(0, left)) + '🖤'.repeat(Math.max(0, total - left));
+}
+
 const ERROR_TEXT: Record<string, string> = {
+  bad_sport: 'Выберите вид тренировки',
+  bad_started_at: 'Проверьте дату: не в будущем и не старше года',
+  bad_workout_duration: 'Длительность — от 1 минуты до суток',
+  bad_kcal: 'Проверьте калории',
+  bad_distance: 'Проверьте дистанцию',
+  bad_hr: 'Пульс — от 30 до 250',
+  not_editable: 'Тренировки с устройств не редактируются',
+  week_not_found: 'Неделя не найдена',
+  participant_not_found: 'Участник не найден',
+  workout_not_found: 'Тренировка не найдена',
   bad_height: 'Рост — от 100 до 250 см',
   bad_birth_year: 'Проверьте год рождения',
   bad_sex: 'Укажите пол',

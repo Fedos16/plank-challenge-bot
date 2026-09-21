@@ -5,9 +5,12 @@ import type {
   AdminFitnessChallenge,
   AdminFitnessInput,
   AdminFitnessParticipant,
+  AdminWeekRow,
   BodyProfile,
   ChallengePublic,
   DebtsOverview,
+  FeedItem,
+  FitnessLeaderboardRow,
   FitnessOverview,
   FreezeOverview,
   GoalInput,
@@ -26,6 +29,8 @@ import type {
   RecentDaysResponse,
   SickResult,
   WeightOverview,
+  Workout,
+  WorkoutInput,
 } from './types';
 
 const DEV_ID = import.meta.env.VITE_DEV_TELEGRAM_ID as string | undefined;
@@ -131,6 +136,41 @@ export const api = {
     request<{ rows: Measurement[] }>('/measurements', { method: 'PUT', body: JSON.stringify(data) }),
   deleteMeasurement: (id: number) =>
     request<{ rows: Measurement[] }>(`/measurements/${id}`, { method: 'DELETE' }),
+
+  // --- фитнес-челлендж: тренировки, рейтинг ---
+  getFitnessWorkouts: (id: number) =>
+    request<{ workouts: Workout[]; sports: string[] }>(`/challenges/${id}/fitness/workouts`),
+  getFitnessLeaderboard: (id: number) =>
+    request<{ rows: FitnessLeaderboardRow[]; feed: FeedItem[] }>(`/challenges/${id}/fitness/leaderboard`),
+  addWorkout: (data: WorkoutInput) =>
+    request<{ ok: boolean; id: number }>('/workouts', { method: 'POST', body: JSON.stringify(data) }),
+  deleteWorkout: (id: number) => request<{ ok: boolean }>(`/workouts/${id}`, { method: 'DELETE' }),
+
+  // --- админка фитнеса: недели, жизни, модерация ---
+  adminFitnessWeeks: (id: number) =>
+    request<{ weeks: { weekNumber: number; rows: AdminWeekRow[] }[] }>(`/admin/challenges/${id}/weeks`),
+  adminWeekAction: (id: number, weekId: number, action: 'forgive' | 'unforgive' | 'recalc', note?: string) =>
+    request<{ ok: boolean; passed: boolean; done: number; required: number }>(
+      `/admin/challenges/${id}/weeks/${weekId}/${action}`,
+      { method: 'POST', body: JSON.stringify({ note }) },
+    ),
+  adminReinstate: (id: number, participationId: number) =>
+    request<{ ok: boolean; forgivenWeekNumbers: number[] }>(
+      `/admin/challenges/${id}/participants/${participationId}/reinstate`,
+      { method: 'POST' },
+    ),
+  adminParticipantWorkouts: (id: number, participationId: number) =>
+    request<{ workouts: Workout[] }>(`/admin/challenges/${id}/participants/${participationId}/workouts`),
+  adminExcludeWorkout: (id: number, workoutId: number, excluded: boolean, note?: string) =>
+    request<{ ok: boolean }>(`/admin/challenges/${id}/workouts/${workoutId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ excluded, note }),
+    }),
+  adminEvaluate: (id: number) =>
+    request<{ ok: boolean; created: number; dm: number; chat: boolean }>(
+      `/admin/challenges/${id}/evaluate`,
+      { method: 'POST' },
+    ),
 
   // --- админка челленджей по id (фитнес) ---
   adminListChallenges: () => request<{ rows: AdminChallengeRow[] }>('/admin/challenges'),

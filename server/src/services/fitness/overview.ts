@@ -4,6 +4,7 @@ import { todayDay } from '../../lib/time';
 import { WEEK_DAYS, weekIndexOf } from '../../lib/weeks';
 import { challengeTimeline, type ChallengeTimeline } from '../challenge';
 import { displayName } from '../users';
+import { getGameState, type GameStateDTO } from './evaluation';
 import {
   getBodyProfile,
   getGoal,
@@ -71,6 +72,8 @@ export interface FitnessOverview {
   bodyProfile: BodyProfileDTO;
   goal: GoalDTO | null;
   progress: GoalProgressDTO | null;
+  /** Жизни, текущая неделя и история недель. */
+  game: GameStateDTO;
   participants: FitnessParticipantDTO[];
 }
 
@@ -114,9 +117,10 @@ export async function getFitnessOverview(
   participation: Participation,
   user: User,
 ): Promise<FitnessOverview> {
-  const [bodyProfile, goal, participants] = await Promise.all([
+  const [bodyProfile, goal, game, participants] = await Promise.all([
     getBodyProfile(user.id),
     getGoal(participation),
+    getGameState(ch, participation),
     listParticipants(ch, user.id),
   ]);
 
@@ -133,6 +137,7 @@ export async function getFitnessOverview(
     bodyProfile,
     goal: goal?.goal ?? null,
     progress: goal?.progress ?? null,
+    game,
     participants,
   };
 }
@@ -143,6 +148,10 @@ export interface FitnessSummary {
   phase: ChallengeTimeline['phase'];
   hasGoal: boolean;
   progressPercent: number | null;
+  livesLeft: number;
+  livesTotal: number;
+  eliminated: boolean;
+  week: { done: number; required: number } | null;
 }
 
 /** Короткая сводка для карточки в списке челленджей. */
@@ -151,12 +160,16 @@ export async function getFitnessSummary(
   participation: Participation,
 ): Promise<FitnessSummary> {
   const timeline = challengeTimeline(ch);
-  const goal = await getGoal(participation);
+  const [goal, game] = await Promise.all([getGoal(participation), getGameState(ch, participation)]);
   return {
     dayNumber: timeline.dayNumber,
     daysTotal: timeline.daysTotal,
     phase: timeline.phase,
     hasGoal: goal !== null,
     progressPercent: goal?.progress.percent ?? null,
+    livesLeft: game.lives.left,
+    livesTotal: game.lives.total,
+    eliminated: game.lives.eliminated,
+    week: game.currentWeek ? { done: game.currentWeek.done, required: game.currentWeek.required } : null,
   };
 }

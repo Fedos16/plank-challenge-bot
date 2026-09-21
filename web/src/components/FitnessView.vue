@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { api } from '../api';
-import type { FitnessOverview, FitnessParticipant } from '../types';
+import type { FitnessOverview } from '../types';
 import { confirmAction, haptic } from '../telegram';
 import { formatDateRu } from '../helpers';
-import { GOAL_EMOJI, GOAL_LABEL, METRIC_UNIT, errorText, formatNum } from '../fitness';
+import { GOAL_EMOJI, GOAL_LABEL, METRIC_UNIT, errorText, formatNum, hearts } from '../fitness';
 import GoalOnboarding from './GoalOnboarding.vue';
 import BodyTab from './BodyTab.vue';
+import WorkoutsTab from './WorkoutsTab.vue';
+import FitnessLeaderboard from './FitnessLeaderboard.vue';
 
 const props = defineProps<{ challengeId: number }>();
 const emit = defineEmits<{ (e: 'back'): void; (e: 'left'): void }>();
 
-type Sub = 'overview' | 'body' | 'more';
+type Sub = 'overview' | 'workouts' | 'board' | 'body' | 'more';
 const sub = ref<Sub>('overview');
 const data = ref<FitnessOverview | null>(null);
 const loading = ref(true);
@@ -81,11 +83,16 @@ const remaining = computed(() => {
   return Math.max(0, Math.round(left * 10) / 10);
 });
 
-function bodyLine(p: FitnessParticipant): string {
-  if (!p.body || p.body.current === null) return '';
-  const target = p.body.target !== null ? ` → ${formatNum(p.body.target)}` : '';
-  return `${formatNum(p.body.current)}${target}`;
-}
+/** Подпись под счётом недели: сколько осталось и сколько на это дней. */
+const weekLabel = computed(() => {
+  const week = data.value?.game.currentWeek;
+  if (!week) return '';
+  const left = week.required - week.done;
+  if (left <= 0) return `неделя ${week.weekNumber} закрыта 🎉`;
+  const daysLeft = week.days.filter((d) => d.inWindow && (d.isToday || d.isFuture)).length;
+  const word = left === 1 ? 'тренировка' : left < 5 ? 'тренировки' : 'тренировок';
+  return `неделя ${week.weekNumber} · ещё ${left} ${word} за ${daysLeft} дн.`;
+});
 
 async function toggleShare() {
   if (!data.value || busy.value) return;
@@ -151,21 +158,59 @@ watch(() => props.challengeId, load);
       <template v-else>
         <div class="subtabs">
           <button :class="{ active: sub === 'overview' }" @click="sub = 'overview'">Обзор</button>
+          <button :class="{ active: sub === 'workouts' }" @click="sub = 'workouts'">Тренировки</button>
+          <button :class="{ active: sub === 'board' }" @click="sub = 'board'">Рейтинг</button>
           <button :class="{ active: sub === 'body' }" @click="sub = 'body'">Тело</button>
           <button :class="{ active: sub === 'more' }" @click="sub = 'more'">Ещё</button>
         </div>
 
         <!-- ОБЗОР -->
         <template v-if="sub === 'overview'">
-          <div class="streak-hero">
-            <template v-if="data.progress?.percent !== null && data.progress?.percent !== undefined">
-              <div class="num">{{ data.progress.percent }}%</div>
-              <div class="lbl">к цели · {{ GOAL_LABEL[data.goal.goalType].toLowerCase() }}</div>
+          <div v-if="data.game.lives.eliminated" class="card out-banner">
+            <b>☠️ Вы выбыли из зачёта</b> на неделе {{ data.game.lives.eliminatedAtWeekNumber }}.
+            Тренировки, вес и замеры можно вести дальше — просто вне зачёта.
+          </div>
+
+          <!-- Игра: жизни и норма текущей недели -->
+          <div class="streak-hero" :class="{ out: data.game.lives.eliminated }">
+            <div class="hero-lives">{{ hearts(data.game.lives.left, data.game.lives.total) }}</div>
+            <template v-if="data.game.currentWeek">
+              <div class="num">{{ data.game.currentWeek.done }} из {{ data.game.currentWeek.required }}</div>
+              <div class="lbl">{{ weekLabel }}</div>
+              <div class="days">
+                <span
+                  v-for="d in data.game.currentWeek.days"
+                  :key="d.day"
+                  class="day"
+                  :class="{ done: d.count > 0, today: d.isToday, off: !d.inWindow }"
+                  :title="formatDateRu(d.day)"
+                >{{ d.count > 0 ? '✓' : '' }}</span>
+              </div>
             </template>
-            <template v-else>
-              <div class="num">{{ GOAL_EMOJI[data.goal.goalType] }}</div>
-              <div class="lbl">{{ data.goal.note || GOAL_LABEL[data.goal.goalType] }}</div>
-            </template>
+            <div v-else class="lbl">
+              {{ data.challenge.phase === 'upcoming' ? 'Челлендж ещё не начался' : 'Челлендж завершён' }}
+            </div>
+          </div>
+
+          <button
+            v-if="data.game.currentWeek"
+            class="btn"
+            style="margin-bottom: 12px"
+            @click="sub = 'workouts'"
+          >
+            ➕ Записать тренировку
+          </button>
+
+          <!-- Личная цель -->
+          <div class="card">
+            <div class="bar-head">
+              <span class="person-name">{{ GOAL_EMOJI[data.goal.goalType] }} {{ GOAL_LABEL[data.goal.goalType] }}</span>
+              <span v-if="typeof data.progress?.percent === 'number'" class="fire">{{ data.progress.percent }}%</span>
+            </div>
+            <div v-if="typeof data.progress?.percent === 'number'" class="bar">
+              <div class="bar-fill" :style="{ width: data.progress.percent + '%' }" />
+            </div>
+            <div v-if="data.goal.note" class="muted" style="margin-top: 6px">{{ data.goal.note }}</div>
           </div>
 
           <div v-if="data.progress?.metric" class="stats-grid" style="margin-bottom: 12px">
@@ -201,24 +246,30 @@ watch(() => props.challengeId, load);
             <div class="bar"><div class="bar-fill time" :style="{ width: timePercent + '%' }" /></div>
           </div>
 
-          <div class="card">
-            <h3>Участники</h3>
-            <div v-for="p in data.participants" :key="p.participationId" class="person">
-              <div class="bar-head">
-                <span class="person-name">
-                  {{ p.goalType ? GOAL_EMOJI[p.goalType] : '⏳' }} {{ p.name }}
-                  <span v-if="p.isMe" class="muted">· вы</span>
-                </span>
-                <span v-if="p.progressPercent !== null" class="fire">{{ p.progressPercent }}%</span>
-                <span v-else class="muted">{{ p.goalType ? GOAL_LABEL[p.goalType] : 'цель не выбрана' }}</span>
+          <!-- История недель: от свежих к старым -->
+          <div v-if="data.game.history.length" class="card">
+            <h3>Недели</h3>
+            <div v-for="w in data.game.history" :key="w.id" class="row">
+              <div class="name">
+                Неделя {{ w.weekNumber }}
+                <div class="meta">{{ formatDateRu(w.start) }} – {{ formatDateRu(w.end) }}</div>
               </div>
-              <div v-if="p.progressPercent !== null" class="bar">
-                <div class="bar-fill" :style="{ width: p.progressPercent + '%' }" />
+              <div class="meta">{{ w.done }} из {{ w.required }}</div>
+              <div class="week-mark">
+                <template v-if="w.outOfGame">вне зачёта</template>
+                <template v-else-if="w.status === 'passed'">✅</template>
+                <template v-else-if="w.status === 'forgiven'">🤝 прощена</template>
+                <template v-else>💔 −1</template>
               </div>
-              <div v-if="bodyLine(p)" class="muted">{{ bodyLine(p) }}</div>
             </div>
           </div>
         </template>
+
+        <!-- ТРЕНИРОВКИ -->
+        <WorkoutsTab v-else-if="sub === 'workouts'" :challenge-id="challengeId" :overview="data" @changed="refresh" />
+
+        <!-- РЕЙТИНГ -->
+        <FitnessLeaderboard v-else-if="sub === 'board'" :challenge-id="challengeId" :overview="data" />
 
         <!-- ТЕЛО -->
         <BodyTab v-else-if="sub === 'body'" :overview="data" @changed="refresh" />
@@ -312,15 +363,57 @@ watch(() => props.challengeId, load);
 .bar-fill.time {
   background: var(--link);
 }
-.person {
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
-}
-.person:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
 .person-name {
+  font-weight: 600;
+}
+.out-banner {
+  border: 1.5px solid rgba(231, 76, 60, 0.4);
+  font-size: 14px;
+}
+.streak-hero.out {
+  background: linear-gradient(135deg, #6b6b73, #8e8e96);
+}
+.hero-lives {
+  font-size: 22px;
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+}
+.streak-hero .num {
+  font-size: 44px;
+}
+.days {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+.day {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+}
+.day.done {
+  background: #fff;
+  border-color: #fff;
+  color: var(--accent);
+}
+.day.today {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+/* день до вступления: за него участник не отвечает */
+.day.off {
+  opacity: 0.3;
+}
+.week-mark {
+  min-width: 78px;
+  text-align: right;
+  font-size: 13px;
   font-weight: 600;
 }
 .switch {

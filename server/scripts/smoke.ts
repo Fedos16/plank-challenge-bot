@@ -166,6 +166,7 @@ async function main() {
   );
 
   await fitnessScenario(base);
+  await gameScenario(base);
 
   await app.close();
   console.log('SMOKE OK');
@@ -187,10 +188,18 @@ async function call(method: string, url: string, body?: unknown, headers = HEADE
   return { status: res.status, body: (await res.json().catch(() => null)) as any };
 }
 
+/**
+ * День со сдвигом от сегодня в поясе челленджа (Europe/Moscow, UTC+3 без перевода часов).
+ * По UTC считать нельзя: с 21:00 до полуночи UTC в Москве уже завтра, и «день 11» стал бы двенадцатым.
+ */
+function mskDay(offset: number): string {
+  return new Date(Date.now() + 3 * 3600_000 + offset * 86400_000).toISOString().slice(0, 10);
+}
+
 /** Фитнес-челлендж: создание админом, вступление, анкета, цель, ручной вес, обхваты. */
 async function fitnessScenario(base: string) {
   console.log('--- фитнес-челлендж ---');
-  const day = (offset: number) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+  const day = mskDay;
   const admin = `${base}/api/admin/challenges`;
 
   // Ручные замеры прошлого прогона мешают повторному: стартовая точка цели создаётся,
@@ -298,6 +307,185 @@ async function fitnessScenario(base: string) {
     // прогон не должен оставлять после себя челленджи: каскад уносит участия и цели
     await prisma.challenge.delete({ where: { id } }).catch(() => undefined);
     await cleanManual();
+  }
+}
+
+/** Игра: ручные тренировки, зачёт недели, жизни, выбывание, действия админа, дубли, рейтинг. */
+async function gameScenario(base: string) {
+  console.log('--- игра: тренировки, недели, жизни ---');
+  const { prisma } = await import('../src/lib/prisma');
+  const { randomUUID } = await import('node:crypto');
+  const admin = `${base}/api/admin/challenges`;
+  /** Полдень по Москве в день со сдвигом: тренировка заведомо внутри этого дня челленджа. */
+  const noon = (offset: number, minutes = 0) =>
+    new Date(new Date(`${mskDay(offset)}T09:00:00.000Z`).getTime() + minutes * 60_000).toISOString();
+
+  const cleanWorkouts = () => prisma.workout.deleteMany({ where: { user: { telegramId: 999n } } });
+  await cleanWorkouts();
+
+  // Старт 17 дней назад: неделя 1 = дни −17…−11, неделя 2 = −10…−4, неделя 3 (идёт) = −3…+3
+  const created = await call('POST', admin, {
+    title: 'Smoke игра', startDate: mskDay(-17), durationDays: 100, weeklyWorkouts: 3, lives: 2, minWorkoutMin: 20,
+  });
+  const id: number = created.body.id;
+  try {
+    await call('POST', `${base}/api/challenges/${id}/join`, {});
+    // Вступивший сегодня отвечал бы только за остаток текущей недели — сдвигаем вступление в прошлое
+    await prisma.participation.updateMany({
+      where: { challengeId: id },
+      data: { joinedAt: new Date(`${mskDay(-18)}T09:00:00.000Z`) },
+    });
+
+    const add = (startedAt: string, durationMin: number, extra: Record<string, unknown> = {}) =>
+      call('POST', `${base}/api/workouts`, {
+        clientId: randomUUID(), sport: 'strength', startedAt, durationMin, ...extra,
+      });
+
+    // валидация
+    expect('нулевая длительность -> 400', (await add(noon(-1), 0)).body?.error, 'bad_workout_duration');
+    expect('неизвестный вид -> 400', (await add(noon(-1), 30, { sport: 'chess' })).body?.error, 'bad_sport');
+    expect('тренировка из будущего -> 400', (await add(noon(3), 30)).body?.error, 'bad_started_at');
+    expect('без clientId -> 400', (await add(noon(-1), 30, { clientId: '' })).body?.error, 'bad_client_id');
+
+    // неделя 1: норма закрыта; плюс вторая за день (лимит) и короткая
+    for (const d of [-17, -16, -15]) await add(noon(d), 30, { kcal: 300 });
+    await add(noon(-15, 300), 40);
+    await add(noon(-14), 10);
+    // неделя 2: одна из трёх — провал
+    await add(noon(-9), 30);
+    // неделя 3 (текущая)
+    const clientId = randomUUID();
+    const run = { clientId, sport: 'run', startedAt: noon(-1), durationMin: 45, kcal: 520 };
+    const cur = await call('POST', `${base}/api/workouts`, run);
+    const again = await call('POST', `${base}/api/workouts`, run);
+    expect('повтор с тем же clientId — та же запись', again.body.id, cur.body.id);
+
+    const journalUrl = `${base}/api/challenges/${id}/fitness/workouts`;
+    const journal = async () => (await jget(journalUrl)).workouts as any[];
+    const verdictCounts = async () => {
+      const counts: Record<string, number> = {};
+      for (const w of await journal()) counts[w.verdict] = (counts[w.verdict] ?? 0) + 1;
+      return [counts.counted ?? 0, counts.too_short ?? 0, counts.day_limit ?? 0];
+    };
+    expect('вердикты журнала: в зачёте / короткая / лимит дня', await verdictCounts(), [5, 1, 1]);
+
+    // итоги недель
+    const ev1 = await call('POST', `${admin}/${id}/evaluate`, {});
+    expect('закрыто недель', ev1.body.created, 2);
+    expect('повторная оценка идемпотентна', (await call('POST', `${admin}/${id}/evaluate`, {})).body.created, 0);
+
+    const game = async () => (await jget(`${base}/api/challenges/${id}/fitness`)).game;
+    const brief = (g: any) => [
+      g.lives.left,
+      g.lives.eliminated,
+      g.history.map((w: any) => `${w.weekNumber}:${w.status}:${w.done}/${w.required}`),
+    ];
+    let g = await game();
+    expect('жизни после двух недель', brief(g), [1, false, ['2:failed:1/3', '1:passed:3/3']]);
+    expect(
+      'текущая неделя',
+      [g.currentWeek.weekNumber, g.currentWeek.done, g.currentWeek.required, g.totalCounted],
+      [3, 1, 3, 5],
+    );
+    expect('полоска недели — 7 дней', g.currentWeek.days.length, 7);
+
+    const failed = g.history.find((w: any) => w.status === 'failed');
+    const passedWeek = g.history.find((w: any) => w.status === 'passed');
+
+    // прощение возвращает жизнь, отмена — забирает
+    await call('POST', `${admin}/${id}/weeks/${failed.id}/forgive`, { note: 'болел' });
+    g = await game();
+    expect(
+      'прощённая неделя жизнь не снимает',
+      [g.lives.left, g.history[0].status, g.history[0].forgivenNote],
+      [2, 'forgiven', 'болел'],
+    );
+    await call('POST', `${admin}/${id}/weeks/${failed.id}/unforgive`, {});
+    expect('отмена прощения', (await game()).lives.left, 1);
+
+    // выбывание: доступ к своим данным остаётся
+    await call('PATCH', `${admin}/${id}`, { lives: 1 });
+    g = await game();
+    expect('выбыл на неделе 2', [g.lives.left, g.lives.eliminated, g.lives.eliminatedAtWeekNumber], [0, true, 2]);
+    expect('выбывший может вести тренировки', (await add(noon(-2), 25)).status, 200);
+    const board0 = await jget(`${base}/api/challenges/${id}/fitness/leaderboard`);
+    expect('в рейтинге отмечен выбывшим', [board0.rows.length, board0.rows[0].eliminated], [1, true]);
+    const my = await jget(`${base}/api/my/challenges`);
+    expect('остаётся в «Моих»', my.challenges.find((c: any) => c.id === id)?.fitness.eliminated, true);
+
+    const pid = (await jget(`${admin}/${id}/participants`)).rows[0].participationId;
+    const back = await call('POST', `${admin}/${id}/participants/${pid}/reinstate`, {});
+    expect('возврат прощает неделю выбывания', back.body.forgivenWeekNumbers, [2]);
+    expect('снова в игре', (await game()).lives.eliminated, false);
+    await call('POST', `${admin}/${id}/weeks/${failed.id}/unforgive`, {});
+    await call('PATCH', `${admin}/${id}`, { lives: 2 });
+
+    // правка задним числом снимок не меняет — только осознанный пересчёт админа
+    await add(noon(-8), 30);
+    await add(noon(-7), 30);
+    await call('POST', `${admin}/${id}/evaluate`, {});
+    expect('снимок недели не переписан', (await game()).history[0].done, 1);
+    const recalc = await call('POST', `${admin}/${id}/weeks/${failed.id}/recalc`, {});
+    expect('пересчёт админом', [recalc.body.passed, recalc.body.done, (await game()).lives.left], [true, 3, 2]);
+
+    // админ снимает тренировку с зачёта
+    const firstWeekWorkout = (await journal()).find((w: any) => w.startedAt === noon(-17));
+    await call('PATCH', `${admin}/${id}/workouts/${firstWeekWorkout.id}`, { excluded: true, note: 'не тренировка' });
+    const recalc1 = await call('POST', `${admin}/${id}/weeks/${passedWeek.id}/recalc`, {});
+    expect('снятая тренировка роняет неделю', [recalc1.body.passed, recalc1.body.done], [false, 2]);
+    await call('PATCH', `${admin}/${id}/workouts/${firstWeekWorkout.id}`, { excluded: false });
+    await call('POST', `${admin}/${id}/weeks/${passedWeek.id}/recalc`, {});
+    expect('возврат в зачёт', (await game()).lives.left, 2);
+
+    // дубли: та же тренировка с браслета главнее ручной; после удаления основной дубль возвращается
+    const me = await prisma.user.findUniqueOrThrow({ where: { telegramId: 999n } });
+    const whoop = await prisma.workout.create({
+      data: {
+        userId: me.id,
+        source: 'whoop',
+        externalId: randomUUID(),
+        sport: 'run',
+        startedAt: new Date(noon(0)),
+        durationSec: 3600,
+        kcal: 640,
+      },
+    });
+    const manualDup = await add(noon(0, 10), 40, { sport: 'run' });
+    const verdictOf = async (workoutId: number) => (await journal()).find((w: any) => w.id === workoutId)?.verdict;
+    expect(
+      'ручная запись поверх браслета — дубль',
+      [await verdictOf(manualDup.body.id), await verdictOf(whoop.id)],
+      ['duplicate', 'counted'],
+    );
+    const feed = (await jget(`${base}/api/challenges/${id}/fitness/leaderboard`)).feed as any[];
+    expect('дубль не попадает в общую ленту', feed.some((w: any) => w.id === manualDup.body.id), false);
+
+    expect('удаление', (await call('DELETE', `${base}/api/workouts/${whoop.id}`)).status, 200);
+    expect(
+      'после удаления основной дубль снова в зачёте',
+      [await verdictOf(whoop.id), await verdictOf(manualDup.body.id)],
+      [undefined, 'counted'],
+    );
+    const tomb = await prisma.workout.findUniqueOrThrow({ where: { id: whoop.id } });
+    expect('удалённая осталась тумбстоуном', tomb.deletedAt !== null, true);
+
+    // чужие тренировки недоступны
+    const other = { ...HEADERS, 'X-Dev-Telegram-Id': '998' };
+    const foreignDelete = await call('DELETE', `${base}/api/workouts/${cur.body.id}`, undefined, other);
+    expect('чужую тренировку не удалить', foreignDelete.status, 404);
+    const foreignPatch = await call(
+      'PATCH',
+      `${base}/api/workouts/${cur.body.id}`,
+      { sport: 'run', startedAt: noon(-1), durationMin: 5 },
+      other,
+    );
+    expect('чужую тренировку не править', foreignPatch.status, 404);
+
+    const weeks = await jget(`${admin}/${id}/weeks`);
+    expect('админ видит недели', weeks.weeks.map((w: any) => [w.weekNumber, w.rows.length]), [[2, 1], [1, 1]]);
+  } finally {
+    await prisma.challenge.delete({ where: { id } }).catch(() => undefined);
+    await cleanWorkouts();
   }
 }
 

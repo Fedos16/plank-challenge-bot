@@ -7,8 +7,19 @@ import { prisma } from '../lib/prisma';
 import { dateToDay, dayToDate, dayjs } from '../lib/time';
 import { can, challengeTimeline, getChallengeById } from '../services/challenge';
 import { displayName } from '../services/users';
+import { config } from '../lib/config';
 import { progressFor, type GoalType } from '../services/fitness/goals';
 import { fitnessSettings } from '../services/fitness/overview';
+import {
+  evaluateClosedWeeks,
+  forgiveWeek,
+  getGameState,
+  recalcWeek,
+  reinstate,
+  unforgiveWeek,
+} from '../services/fitness/evaluation';
+import { announceWeekResults } from '../services/fitness/fitnessReport';
+import { listWorkouts, setWorkoutExcluded } from '../services/fitness/workouts';
 
 /**
  * Админка челленджей по :id. Планка по-прежнему живёт в /api/admin/challenge (она одна и
@@ -105,6 +116,7 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
           })
         : [];
       const progress = p.goal ? progressFor(p.goal, entries) : null;
+      const game = await getGameState(ch, p);
       rows.push({
         participationId: p.id,
         userId: p.userId,
@@ -115,9 +127,120 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
         goalType: (p.goal?.goalType as GoalType | undefined) ?? null,
         // админ видит цифры: он ведёт челлендж и сверяет стартовые замеры
         progress,
+        lives: game.lives,
+        week: game.currentWeek ? { done: game.currentWeek.done, required: game.currentWeek.required } : null,
+        totalCounted: game.totalCounted,
       });
     }
     return { rows };
+  });
+
+  // ---- Недели и жизни ----
+  // Итоги по неделям, от свежих к старым; внутри — все участники с их состоянием жизней
+  app.get('/:id/weeks', async (req, reply) => {
+    const ch = await requireFitness((req.params as { id: string }).id, reply);
+    if (!ch) return;
+    const participations = await prisma.participation.findMany({
+      where: { challengeId: ch.id },
+      include: { user: true },
+    });
+
+    const byWeek = new Map<number, unknown[]>();
+    for (const p of participations) {
+      const game = await getGameState(ch, p);
+      for (const w of game.history) {
+        const rows = byWeek.get(w.weekNumber) ?? [];
+        rows.push({ ...w, participationId: p.id, name: displayName(p.user) });
+        byWeek.set(w.weekNumber, rows);
+      }
+    }
+    return {
+      weeks: [...byWeek.entries()]
+        .sort((a, b) => b[0] - a[0])
+        .map(([weekNumber, rows]) => ({ weekNumber, rows })),
+    };
+  });
+
+  for (const action of ['forgive', 'unforgive', 'recalc'] as const) {
+    app.post(`/:id/weeks/:weekId/${action}`, async (req, reply) => {
+      const params = req.params as { id: string; weekId: string };
+      const ch = await requireFitness(params.id, reply);
+      if (!ch) return;
+      const weekId = parseId(params.weekId, reply, 'bad_week_id');
+      if (weekId === null) return;
+
+      const note = ((req.body ?? {}) as { note?: unknown }).note;
+      const result =
+        action === 'forgive'
+          ? await forgiveWeek(ch, weekId, typeof note === 'string' && note.trim() ? note.trim().slice(0, 200) : null)
+          : action === 'unforgive'
+            ? await unforgiveWeek(ch, weekId)
+            : await recalcWeek(ch, weekId);
+      if (typeof result === 'string') return reply.code(404).send({ error: result });
+      return { ok: true, passed: result.passed, done: result.done, required: result.required };
+    });
+  }
+
+  // Вернуть выбывшего: прощает неделю выбывания и все провалы после неё
+  app.post('/:id/participants/:pid/reinstate', async (req, reply) => {
+    const params = req.params as { id: string; pid: string };
+    const ch = await requireFitness(params.id, reply);
+    if (!ch) return;
+    const pid = parseId(params.pid, reply, 'bad_participation_id');
+    if (pid === null) return;
+    const result = await reinstate(ch, pid);
+    if (typeof result === 'string') return reply.code(404).send({ error: result });
+    return { ok: true, ...result };
+  });
+
+  // Тренировки участника для модерации
+  app.get('/:id/participants/:pid/workouts', async (req, reply) => {
+    const params = req.params as { id: string; pid: string };
+    const ch = await requireFitness(params.id, reply);
+    if (!ch) return;
+    const pid = parseId(params.pid, reply, 'bad_participation_id');
+    if (pid === null) return;
+    const p = await prisma.participation.findFirst({ where: { id: pid, challengeId: ch.id } });
+    if (!p) return reply.code(404).send({ error: 'participant_not_found' });
+    return { workouts: await listWorkouts(ch, p.userId) };
+  });
+
+  // Снять тренировку с зачёта или вернуть. Закрытую неделю это само не меняет — нужен «пересчитать»
+  app.patch('/:id/workouts/:wid', async (req, reply) => {
+    const params = req.params as { id: string; wid: string };
+    const ch = await requireFitness(params.id, reply);
+    if (!ch) return;
+    const wid = parseId(params.wid, reply, 'bad_workout_id');
+    if (wid === null) return;
+    const body = (req.body ?? {}) as { excluded?: unknown; note?: unknown };
+    if (typeof body.excluded !== 'boolean') return reply.code(400).send({ error: 'bad_request' });
+
+    // чужую тренировку трогать нельзя: только тех, кто состоит в этом челлендже
+    const workout = await prisma.workout.findUnique({ where: { id: wid } });
+    const member = workout
+      ? await prisma.participation.findFirst({ where: { challengeId: ch.id, userId: workout.userId } })
+      : null;
+    if (!workout || !member) return reply.code(404).send({ error: 'workout_not_found' });
+
+    const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim().slice(0, 200) : null;
+    await setWorkoutExcluded(wid, workout.userId, body.excluded, note);
+    return { ok: true };
+  });
+
+  // Подвести итоги сейчас, не дожидаясь планировщика. asOf — только вне прода: «как будто сейчас
+  // такая-то дата», чтобы проверить закрытие недели, не ожидая её конца.
+  app.post('/:id/evaluate', async (req, reply) => {
+    const ch = await requireFitness((req.params as { id: string }).id, reply);
+    if (!ch) return;
+    const asOf = ((req.body ?? {}) as { asOf?: unknown }).asOf;
+    let now = new Date();
+    if (typeof asOf === 'string' && config.nodeEnv !== 'production') {
+      now = new Date(asOf);
+      if (Number.isNaN(now.getTime())) return reply.code(400).send({ error: 'bad_as_of' });
+    }
+    const created = await evaluateClosedWeeks(ch, { now });
+    const told = await announceWeekResults(ch, created, now);
+    return { ok: true, created: created.length, ...told };
   });
 }
 

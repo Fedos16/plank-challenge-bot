@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import type { AvailableChallenge, DayState, MyChallenge, PersonalSummary } from '../types';
 import { STATE_LABEL, formatMoney } from '../helpers';
+import { hearts } from '../fitness';
 
 defineProps<{
   group: MyChallenge[];
@@ -35,6 +36,11 @@ function dayState(c: MyChallenge): DayState {
 
 function formatKg(n: number): string {
   return n.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+function weekDone(c: MyChallenge): boolean {
+  const week = c.fitness?.week;
+  return !!week && week.done >= week.required;
 }
 
 function fitnessDay(c: MyChallenge): string {
@@ -81,14 +87,19 @@ function weekDelta(c: MyChallenge): string {
       >
         <div class="challenge-card-head">
           <div class="challenge-title">🏋️ {{ c.title }}</div>
-          <span v-if="typeof c.fitness?.progressPercent === 'number'" class="fire">
-            {{ c.fitness.progressPercent }}%
+          <span v-if="c.fitness && !c.fitness.hasGoal" class="badge pending">Выбрать цель</span>
+          <span v-else-if="c.fitness?.eliminated" class="badge missed">Выбыл</span>
+          <span v-else-if="c.fitness?.week" class="badge" :class="weekDone(c) ? 'done' : 'pending'">
+            {{ c.fitness.week.done }} из {{ c.fitness.week.required }}
           </span>
-          <span v-else-if="c.fitness && !c.fitness.hasGoal" class="badge pending">Выбрать цель</span>
         </div>
         <div class="muted">{{ c.description }}</div>
         <div class="challenge-card-meta">
           <span>{{ fitnessDay(c) }}</span>
+          <span v-if="c.fitness">{{ hearts(c.fitness.livesLeft, c.fitness.livesTotal) }}</span>
+          <span v-if="typeof c.fitness?.progressPercent === 'number'" class="fire">
+            🎯 {{ c.fitness.progressPercent }}%
+          </span>
           <span class="chev">›</span>
         </div>
       </div>

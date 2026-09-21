@@ -10,6 +10,14 @@ import {
   upsertMeasurement,
 } from '../services/fitness/goals';
 import { getFitnessOverview } from '../services/fitness/overview';
+import { getFitnessFeed, getFitnessLeaderboard } from '../services/fitness/fitnessLeaderboard';
+import {
+  SPORTS,
+  createManualWorkout,
+  deleteWorkout,
+  listWorkouts,
+  updateManualWorkout,
+} from '../services/fitness/workouts';
 
 /** Фитнес-челлендж: личная цель, анкета и замеры участника. */
 export async function fitnessRoutes(app: FastifyInstance): Promise<void> {
@@ -30,6 +38,52 @@ export async function fitnessRoutes(app: FastifyInstance): Promise<void> {
     const result = await saveGoal(r.challenge, r.participation, body);
     if (typeof result === 'string') return reply.code(400).send({ error: result });
     return getFitnessOverview(r.challenge, r.participation, req.ctx!.user);
+  });
+
+  // ---- Тренировки ----
+  // Журнал за время челленджа: у каждой записи — идёт ли она в зачёт недели и почему нет
+  app.get('/challenges/:id/fitness/workouts', async (req, reply) => {
+    const r = await resolveWith('weeklyWorkouts', req, reply);
+    if (!r) return;
+    return { workouts: await listWorkouts(r.challenge, req.ctx!.user.id), sports: SPORTS };
+  });
+
+  // Рейтинг и общая лента: тренировки друг друга видят все участники
+  app.get('/challenges/:id/fitness/leaderboard', async (req, reply) => {
+    const r = await resolveWith('weeklyWorkouts', req, reply);
+    if (!r) return;
+    const meId = req.ctx!.user.id;
+    const [rows, feed] = await Promise.all([
+      getFitnessLeaderboard(r.challenge, meId),
+      getFitnessFeed(r.challenge, meId),
+    ]);
+    return { rows, feed };
+  });
+
+  // Тренировка принадлежит человеку, а не челленджу — поэтому роуты без :id челленджа
+  app.post('/workouts', async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const result = await createManualWorkout(req.ctx!.user.id, body);
+    if (typeof result === 'string') return reply.code(400).send({ error: result });
+    return { ok: true, id: result.id };
+  });
+
+  app.patch('/workouts/:id', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === null) return;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const result = await updateManualWorkout(req.ctx!.user.id, id, body);
+    if (result === 'not_found') return reply.code(404).send({ error: result });
+    if (typeof result === 'string') return reply.code(400).send({ error: result });
+    return { ok: true, id: result.id };
+  });
+
+  app.delete('/workouts/:id', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === null) return;
+    const ok = await deleteWorkout(req.ctx!.user.id, id);
+    if (!ok) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
   });
 
   // ---- Анкета: рост, пол, год рождения. Личная, от челленджа не зависит ----

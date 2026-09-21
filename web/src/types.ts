@@ -42,6 +42,10 @@ export interface FitnessSummary {
   phase: ChallengePhase;
   hasGoal: boolean;
   progressPercent: number | null;
+  livesLeft: number;
+  livesTotal: number;
+  eliminated: boolean;
+  week: { done: number; required: number } | null;
 }
 
 export interface MyChallenge {
@@ -398,7 +402,103 @@ export interface FitnessOverview {
   bodyProfile: BodyProfile;
   goal: Goal | null;
   progress: GoalProgress | null;
+  game: GameState;
   participants: FitnessParticipant[];
+}
+
+export interface LivesInfo {
+  total: number;
+  left: number;
+  eliminated: boolean;
+  eliminatedAtWeekNumber: number | null;
+}
+
+export interface CurrentWeek {
+  weekNumber: number;
+  start: string;
+  end: string;
+  required: number;
+  done: number;
+  days: { day: string; count: number; isToday: boolean; isFuture: boolean; inWindow: boolean }[];
+}
+
+export type WeekStatus = 'passed' | 'failed' | 'forgiven';
+
+export interface WeekHistory {
+  id: number;
+  weekNumber: number;
+  start: string;
+  end: string;
+  required: number;
+  done: number;
+  status: WeekStatus;
+  lifeLost: boolean;
+  outOfGame: boolean;
+  forgivenNote: string | null;
+  upgraded: boolean;
+}
+
+export interface GameState {
+  lives: LivesInfo;
+  currentWeek: CurrentWeek | null;
+  history: WeekHistory[];
+  totalCounted: number;
+}
+
+/** Идёт ли тренировка в зачёт недели и если нет — почему. */
+export type Verdict = 'counted' | 'too_short' | 'duplicate' | 'excluded' | 'day_limit';
+
+export interface Workout {
+  id: number;
+  source: string;
+  sport: string;
+  sportRaw: string | null;
+  startedAt: string;
+  durationMin: number;
+  kcal: number | null;
+  avgHr: number | null;
+  distanceM: number | null;
+  note: string | null;
+  verdict: Verdict;
+  excludedNote: string | null;
+}
+
+export interface WorkoutInput {
+  clientId: string;
+  sport: string;
+  startedAt: string;
+  durationMin: number;
+  kcal?: number | null;
+  distanceM?: number | null;
+  avgHr?: number | null;
+  note?: string | null;
+  tzOffsetMin?: number;
+}
+
+export interface FitnessLeaderboardRow {
+  participationId: number;
+  name: string;
+  photoUrl: string | null;
+  isMe: boolean;
+  livesLeft: number;
+  livesTotal: number;
+  eliminated: boolean;
+  eliminatedAtWeekNumber: number | null;
+  week: { done: number; required: number } | null;
+  normPercent: number | null;
+  totalCounted: number;
+  goalType: GoalType | null;
+  progressPercent: number | null;
+}
+
+export interface FeedItem extends Workout {
+  name: string;
+  isMe: boolean;
+}
+
+export interface AdminWeekRow extends WeekHistory {
+  participationId: number;
+  name: string;
 }
 
 export interface GoalInput {
@@ -465,4 +565,7 @@ export interface AdminFitnessParticipant {
   joinedAt: string;
   goalType: GoalType | null;
   progress: GoalProgress | null;
+  lives: LivesInfo;
+  week: { done: number; required: number } | null;
+  totalCounted: number;
 }

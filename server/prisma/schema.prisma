@@ -30,6 +30,7 @@ model User {
   scaleProfilesTaken ScaleProfile[]      @relation("ScaleProfileTarget")
   bodyProfile        UserBodyProfile?
   measurements       BodyMeasurement[]
+  workouts           Workout[]
 
   @@index([scaleToken])
 }
@@ -78,6 +79,7 @@ model Challenge {
   quotes         MotivationalQuote[]
   reports        DailyReport[]
   freezes        StreakFreeze[]
+  weekResults    WeekResult[]
 }
 
 // Участие пользователя в челлендже («подтверждение участия»)
@@ -97,6 +99,7 @@ model Participation {
   ledger            LedgerEntry[]
   notificationPrefs NotificationPref[]
   goal              ParticipantGoal?
+  weekResults       WeekResult[]
 
   @@unique([challengeId, userId])
 }
@@ -328,4 +331,69 @@ model BodyMeasurement {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, day, kind])
+}
+
+// Тренировка. Принадлежит пользователю, а не участию: одна и та же пробежка идёт в зачёт
+// любого челленджа, где он состоит. Зачёт недели считается на лету по startedAt.
+model Workout {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  source        String // manual | whoop | hae | health_connect | strava
+  /// Идентификатор во внешней системе; у ручной записи — UUID с клиента. Обязателен:
+  /// вместе с source даёт идемпотентность и при ретрае вебхука, и при двойном тапе.
+  externalId    String
+  startedAt     DateTime
+  endedAt       DateTime?
+  durationSec   Int
+  tzOffsetMin   Int? // смещение пояса, в котором шла тренировка, — для показа времени
+  sport         String // нормализованный ключ: run, strength, cycling…
+  sportRaw      String? // как назвал источник
+  kcal          Int?
+  avgHr         Int?
+  maxHr         Int?
+  distanceM     Int?
+  strain        Float?
+  scoreState    String?
+  note          String?
+  /// Та же тренировка, пришедшая из другого источника: в зачёт и суммы ккал не идёт
+  duplicateOfId Int?
+  excluded      Boolean   @default(false) // снята админом
+  excludedNote  String?
+  /// Удалена пользователем. Строка остаётся, чтобы повторная синхронизация её не воскресила
+  deletedAt     DateTime?
+  raw           Json? // урезанный исходник без массивов — для отладки парсеров
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, externalId])
+  @@index([userId, startedAt])
+}
+
+// Итог недели участника — снимок на момент закрытия. Жизни нигде не хранятся: они
+// выводятся прогоном этих строк по порядку (как заморозки — из истории серий).
+model WeekResult {
+  id              Int       @id @default(autoincrement())
+  challengeId     Int
+  participationId Int
+  weekIndex       Int // с нуля
+  weekStart       DateTime  @db.Date // границы окна участника: вступивший посреди недели
+  weekEnd         DateTime  @db.Date // отвечает только за остаток
+  required        Int
+  done            Int
+  passed          Boolean
+  forgiven        Boolean   @default(false) // админ простил: жизнь не снимается
+  forgivenNote    String?
+  forgivenAt      DateTime?
+  upgradedAt      DateTime? // провал исправлен опоздавшей синхронизацией
+  notifiedAt      DateTime? // участнику написали в ЛС
+  closedAt        DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  challenge     Challenge     @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  participation Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+
+  @@unique([participationId, weekIndex])
+  @@index([challengeId, weekIndex])
 }
