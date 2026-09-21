@@ -25,6 +25,27 @@ export function isWhoopEnabled(): boolean {
   return Boolean(config.whoop.clientId && config.whoop.clientSecret && config.tokenEncKey && publicBaseUrl());
 }
 
+export interface WhoopSetup {
+  /** Каких переменных окружения не хватает, чтобы интеграция включилась. */
+  missing: string[];
+  /** Адреса для вставки в настройки приложения на developer.whoop.com. */
+  redirectUrl: string;
+  webhookUrl: string;
+}
+
+/**
+ * Что осталось настроить. Отдаётся только админу: без ключей WHOOP в приложении не виден вовсе,
+ * и без подсказки непонятно, почему. Имена переменных — не секрет, но и участникам они ни к чему.
+ */
+export function whoopSetup(): WhoopSetup {
+  const missing: string[] = [];
+  if (!config.whoop.clientId) missing.push('WHOOP_CLIENT_ID');
+  if (!config.whoop.clientSecret) missing.push('WHOOP_CLIENT_SECRET');
+  if (!config.tokenEncKey) missing.push('TOKEN_ENC_KEY');
+  if (!publicBaseUrl()) missing.push('WEBAPP_URL');
+  return { missing, redirectUrl: whoopRedirectUri(), webhookUrl: whoopWebhookUrl() };
+}
+
 export function whoopRedirectUri(): string {
   return `${publicBaseUrl()}/api/oauth/whoop/callback`;
 }

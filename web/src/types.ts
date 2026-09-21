@@ -597,6 +597,8 @@ export interface IntegrationsResponse {
   available: { whoop: boolean };
   connected: IntegrationInfo[];
   hubs: HubInfo[];
+  /** Только админу и только пока WHOOP не настроен: что осталось сделать на сервере. */
+  whoopSetup: { missing: string[]; redirectUrl: string; webhookUrl: string } | null;
 }
 
 // ---------- Питание ----------

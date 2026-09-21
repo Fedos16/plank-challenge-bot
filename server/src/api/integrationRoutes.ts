@@ -1,7 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { authPreHandler } from './auth';
 import { prisma } from '../lib/prisma';
-import { WHOOP, buildWhoopAuthUrl, disconnectWhoop, isWhoopEnabled, toIntegrationDTO } from '../services/whoop';
+import {
+  WHOOP,
+  buildWhoopAuthUrl,
+  disconnectWhoop,
+  isWhoopEnabled,
+  toIntegrationDTO,
+  whoopSetup,
+} from '../services/whoop';
 import { disconnectHub, ensureHub, isHubProvider, listHubs, rotateHubToken } from '../services/integrations';
 
 /** Подключения источников тренировок. Личные: принадлежат человеку, а не челленджу. */
@@ -15,6 +22,8 @@ export async function integrationRoutes(app: FastifyInstance): Promise<void> {
       available: { whoop: isWhoopEnabled() },
       connected: rows.map(toIntegrationDTO),
       hubs: await listHubs(req.ctx!.user.id),
+      // Админу — что осталось настроить на сервере: иначе непонятно, почему WHOOP не виден
+      whoopSetup: req.ctx!.user.isAdmin && !isWhoopEnabled() ? whoopSetup() : null,
     };
   });
 

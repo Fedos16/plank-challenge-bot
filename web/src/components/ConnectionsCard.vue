@@ -17,6 +17,8 @@ const copied = ref<string | null>(null);
 const awaitingReturn = ref(false);
 /** Какой хаб сейчас раскрыт с инструкцией. */
 const openHub = ref<HubProvider | null>(null);
+/** Раскрыта ли подсказка админу, как включить WHOOP на сервере. */
+const whoopHelp = ref(false);
 
 const whoop = computed(() => data.value?.connected.find((c) => c.provider === 'whoop') ?? null);
 
@@ -181,6 +183,42 @@ onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible
     <div v-if="awaitingReturn" class="muted">
       Разрешите доступ в открывшемся браузере и вернитесь сюда — статус обновится сам.
     </div>
+
+    <!-- WHOOP не настроен на сервере: участникам он не виден, админу — что осталось сделать -->
+    <template v-if="data.whoopSetup">
+      <div class="conn">
+        <div class="grow">
+          <div class="name">WHOOP <span class="muted">· не настроен</span></div>
+          <div class="muted">Видите это только вы, как админ. Участникам WHOOP не показывается.</div>
+        </div>
+        <button class="btn small secondary" @click="whoopHelp = !whoopHelp">
+          {{ whoopHelp ? 'Скрыть' : 'Как включить' }}
+        </button>
+      </div>
+      <div v-if="whoopHelp" class="guide">
+        <ol class="steps">
+          <li>Создайте приложение на developer.whoop.com и впишите в него два адреса ниже. Scopes: offline, read:workout, read:profile. Версия вебхуков — v2.</li>
+          <li>
+            В <code>.env</code> на сервере задайте:
+            <b>{{ data.whoopSetup.missing.join(', ') }}</b>.
+            TOKEN_ENC_KEY — любая длинная случайная строка; менять её потом нельзя.
+          </li>
+          <li>Пересоздайте контейнер, иначе переменные не подхватятся: <code>docker compose up -d --force-recreate app</code></li>
+        </ol>
+        <template v-if="data.whoopSetup.redirectUrl">
+          <div class="field-label">Redirect URL</div>
+          <div class="field-value">{{ data.whoopSetup.redirectUrl }}</div>
+          <button class="btn small secondary" @click="copy(data.whoopSetup.redirectUrl, 'whoop-redirect')">
+            {{ copied === 'whoop-redirect' ? 'Скопировано ✓' : 'Скопировать' }}
+          </button>
+          <div class="field-label" style="margin-top: 12px">Webhook URL</div>
+          <div class="field-value">{{ data.whoopSetup.webhookUrl }}</div>
+          <button class="btn small secondary" @click="copy(data.whoopSetup.webhookUrl, 'whoop-webhook')">
+            {{ copied === 'whoop-webhook' ? 'Скопировано ✓' : 'Скопировать' }}
+          </button>
+        </template>
+      </div>
+    </template>
 
     <!-- Телефонные хабы -->
     <template v-for="hub in data.hubs" :key="hub.provider">
