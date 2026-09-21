@@ -89,7 +89,7 @@ export async function rotateScaleToken(userId: number): Promise<string> {
 
 export async function findUserByScaleToken(token: string): Promise<User | null> {
   if (!token) return null;
-  return prisma.user.findUnique({ where: { scaleToken: token } });
+  return prisma.user.findFirst({ where: { scaleToken: token } });
 }
 
 /**

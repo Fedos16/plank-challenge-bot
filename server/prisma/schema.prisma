@@ -18,13 +18,18 @@ model User {
   isAdmin    Boolean  @default(false)
   createdAt  DateTime @default(now())
   /// Секрет для вебхука умных весов (openScale sync). null — весы не подключены.
-  scaleToken String?  @unique
+  /// Без @unique намеренно: db push в Dockerfile не умеет вешать уникальный индекс на
+  /// колонку существующей таблицы без --accept-data-loss, а токен и так уникален —
+  /// это 24 случайных байта.
+  scaleToken String?
 
   participations     Participation[]
   personalChallenges PersonalChallenge[]
   weights            WeightEntry[]
   scaleProfiles      ScaleProfile[]      @relation("ScaleProfileOwner")
   scaleProfilesTaken ScaleProfile[]      @relation("ScaleProfileTarget")
+
+  @@index([scaleToken])
 }
 
 // Челлендж (например «Планка каждый день»). Все настройки редактируются в админке.
