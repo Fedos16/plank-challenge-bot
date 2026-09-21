@@ -298,6 +298,10 @@ model UserBodyProfile {
   sex            String? // male | female
   activityFactor Float    @default(1.2) // бытовая активность поверх базового обмена
   shareBody      Boolean  @default(false) // показывать другим вес и % жира, а не только % к цели
+  /// В чём человеку привычнее вводить и видеть мышцы: kg — масса (так показывают Zepp, Mi Fitness),
+  /// percent — доля (так считает openScale). Пусто — ещё не выбирал: берём единицу его цели,
+  /// а без цели килограммы. В WeightEntry мышцы всегда лежат в процентах.
+  muscleUnit     String?
   updatedAt      DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -308,10 +312,14 @@ model ParticipantGoal {
   id              Int       @id @default(autoincrement())
   participationId Int       @unique
   goalType        String // lose_weight | lose_fat | gain_muscle | custom
-  targetValue     Float? // кг для lose_weight, проценты для lose_fat и gain_muscle
+  targetValue     Float? // кг для lose_weight, проценты для lose_fat, у gain_muscle — по muscleUnit
   startWeightKg   Float?
   startBodyFat    Float?
   startMuscle     Float?
+  /// Единица startMuscle и, у цели gain_muscle, targetValue: percent | kg. Фиксируется в цели:
+  /// цель «62 кг мышц» нельзя пересчитать в проценты — для этого пришлось бы угадать будущий вес.
+  /// Дефолт percent — так заданы цели, созданные до появления килограммов.
+  muscleUnit      String    @default("percent")
   startDay        DateTime? @db.Date
   dailyKcalTarget Int? // необязательная личная дневная цель по калориям
   note            String?

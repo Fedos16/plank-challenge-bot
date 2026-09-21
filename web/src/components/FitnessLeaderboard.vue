@@ -8,6 +8,7 @@ import {
   GOAL_LABEL,
   SOURCE_LABEL,
   SPORT_EMOJI,
+  UNIT_LABEL,
   VERDICT_LABEL,
   errorText,
   formatNum,
@@ -51,7 +52,8 @@ function statusLine(r: FitnessLeaderboardRow): string {
 function bodyLine(p: FitnessParticipant): string {
   if (!p.body || p.body.current === null) return '';
   const target = p.body.target !== null ? ` → ${formatNum(p.body.target)}` : '';
-  return `${formatNum(p.body.current)}${target}`;
+  const unit = p.body.unit ? ` ${UNIT_LABEL[p.body.unit]}` : '';
+  return `${formatNum(p.body.current)}${target}${unit}`;
 }
 
 function feedMeta(w: FeedItem): string {

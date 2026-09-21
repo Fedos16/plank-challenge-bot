@@ -1,11 +1,28 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api } from '../api';
-import type { FitnessOverview, Measurement, MeasurementKind, WeightOverview, WeightPoint } from '../types';
+import type {
+  FitnessOverview,
+  Measurement,
+  MeasurementKind,
+  MuscleUnit,
+  WeightOverview,
+  WeightPoint,
+} from '../types';
 import { confirmAction, haptic } from '../telegram';
 import { formatDateRu, formatTimeRu } from '../helpers';
-import { MEASUREMENT_KINDS, MEASUREMENT_LABEL, errorText, formatNum, numOrNull } from '../fitness';
+import {
+  MEASUREMENT_KINDS,
+  MEASUREMENT_LABEL,
+  UNIT_LABEL,
+  convertMuscle,
+  errorText,
+  formatNum,
+  muscleUnitOf,
+  numOrNull,
+} from '../fitness';
 import LineChart from './LineChart.vue';
+import UnitToggle from './UnitToggle.vue';
 
 const props = defineProps<{ overview: FitnessOverview }>();
 /** Новый замер меняет прогресс к цели — родитель перечитывает сводку. */
@@ -19,6 +36,10 @@ const error = ref<string | null>(null);
 
 const weightForm = reactive({ weightKg: '', bodyFat: '', muscle: '' });
 const measureForm = reactive({ kind: 'waist' as MeasurementKind, value: '' });
+
+/** В чём вводим и показываем мышцы. В базе всегда доля — килограммы сервер выводит из веса. */
+const muscleUnit = ref<MuscleUnit>(muscleUnitOf(props.overview));
+const muscleUnitLabel = computed(() => UNIT_LABEL[muscleUnit.value]);
 
 async function load() {
   loading.value = true;
@@ -35,6 +56,10 @@ async function load() {
 
 const goalMetric = computed(() => props.overview.progress?.metric ?? null);
 const target = computed(() => props.overview.progress?.target ?? null);
+/** Линию цели по мышцам рисуем, только когда график в той же единице, что и цель. */
+const muscleTarget = computed(() =>
+  goalMetric.value === 'muscle' && props.overview.progress?.unit === muscleUnit.value ? target.value : null,
+);
 
 function series(pick: (p: WeightPoint) => number | null) {
   return (weight.value?.history ?? [])
@@ -43,7 +68,7 @@ function series(pick: (p: WeightPoint) => number | null) {
 }
 const weightSeries = computed(() => series((p) => p.weightKg));
 const fatSeries = computed(() => series((p) => p.bodyFat));
-const muscleSeries = computed(() => series((p) => p.muscle));
+const muscleSeries = computed(() => series((p) => (muscleUnit.value === 'kg' ? p.muscleKg : p.muscle)));
 
 /** История для списка — сверху свежее. */
 const recent = computed<WeightPoint[]>(() => [...(weight.value?.history ?? [])].reverse().slice(0, 15));
@@ -94,15 +119,34 @@ function addWeight() {
     error.value = 'Введите вес';
     return;
   }
+  const muscle = numOrNull(weightForm.muscle);
   void run(async () => {
     weight.value = await api.addManualWeight({
       weightKg,
       bodyFat: numOrNull(weightForm.bodyFat),
-      muscle: numOrNull(weightForm.muscle),
+      ...(muscleUnit.value === 'kg' ? { muscleKg: muscle } : { muscle }),
     });
     weightForm.weightKg = weightForm.bodyFat = weightForm.muscle = '';
     emit('changed');
   });
+}
+
+/** Выбор единицы запоминается в анкете; уже набранное число пересчитываем через набранный вес. */
+function setMuscleUnit(unit: MuscleUnit) {
+  if (unit === muscleUnit.value) return;
+  const typed = numOrNull(weightForm.muscle);
+  const weightKg = numOrNull(weightForm.weightKg);
+  if (typed !== null) weightForm.muscle = weightKg ? String(convertMuscle(typed, weightKg, unit)) : '';
+  muscleUnit.value = unit;
+  void run(async () => {
+    await api.saveBodyProfile({ muscleUnit: unit });
+    emit('changed');
+  });
+}
+
+function muscleText(e: WeightPoint): string | null {
+  const value = muscleUnit.value === 'kg' ? e.muscleKg : e.muscle;
+  return value === null ? null : `мышцы ${formatNum(value)} ${muscleUnitLabel.value}`;
 }
 
 async function removeWeight(id: number) {
@@ -153,10 +197,11 @@ onMounted(load);
           <input v-model="weightForm.bodyFat" inputmode="decimal" placeholder="—" @keyup.enter="addWeight" />
         </label>
         <label class="field">
-          <span class="lbl">Мышцы, %</span>
+          <span class="lbl">Мышцы, {{ muscleUnitLabel }}</span>
           <input v-model="weightForm.muscle" inputmode="decimal" placeholder="—" @keyup.enter="addWeight" />
         </label>
       </div>
+      <UnitToggle :model-value="muscleUnit" label="Мышцы считать в" :disabled="busy" @update:model-value="setMuscleUnit" />
       <button class="btn" :disabled="busy" @click="addWeight">Записать</button>
       <div class="muted" style="margin-top: 8px">
         С умных весов вес приходит сам — подключение в группе «Взвешивание».
@@ -176,7 +221,7 @@ onMounted(load);
     </div>
     <div v-if="muscleSeries.length > 1" class="card">
       <h3>Мышцы</h3>
-      <LineChart :points="muscleSeries" unit="%" :target="goalMetric === 'muscle' ? target : null" />
+      <LineChart :points="muscleSeries" :unit="muscleUnitLabel" :target="muscleTarget" />
     </div>
 
     <!-- Обхваты -->
@@ -209,7 +254,9 @@ onMounted(load);
       <div v-for="e in recent" :key="e.id" class="row">
         <div class="name">{{ formatDateRu(e.day) }}</div>
         <div class="meta">{{ formatTimeRu(e.measuredAt) }}</div>
-        <div v-if="e.bodyFat !== null" class="meta">жир {{ e.bodyFat }}%</div>
+        <!-- в строке место под один показатель состава: тот, за которым человек следит -->
+        <div v-if="goalMetric === 'muscle' && muscleText(e)" class="meta">{{ muscleText(e) }}</div>
+        <div v-else-if="e.bodyFat !== null" class="meta">жир {{ e.bodyFat }}%</div>
         <div class="fire">{{ formatNum(e.weightKg) }}</div>
         <button class="row-x" :disabled="busy" @click="removeWeight(e.id)">✕</button>
       </div>

@@ -57,7 +57,7 @@ export interface FitnessParticipantDTO {
   goalType: GoalType | null;
   progressPercent: number | null;
   /** Только если участник сам открыл цифры в анкете. */
-  body: { start: number | null; current: number | null; target: number | null } | null;
+  body: Pick<GoalProgressDTO, 'unit' | 'start' | 'current' | 'target'> | null;
 }
 
 export interface FitnessOverview {
@@ -105,7 +105,7 @@ async function listParticipants(ch: Challenge, meId: number): Promise<FitnessPar
       progressPercent: progress?.percent ?? null,
       body:
         open && progress?.metric
-          ? { start: progress.start, current: progress.current, target: progress.target }
+          ? { unit: progress.unit, start: progress.start, current: progress.current, target: progress.target }
           : null,
     });
   }

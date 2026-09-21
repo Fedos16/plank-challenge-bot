@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { FitnessOverview } from '../types';
 import { confirmAction, haptic } from '../telegram';
 import { formatDateRu } from '../helpers';
-import { GOAL_EMOJI, GOAL_LABEL, METRIC_UNIT, errorText, formatNum, hearts } from '../fitness';
+import { GOAL_EMOJI, GOAL_LABEL, UNIT_LABEL, errorText, formatNum, hearts } from '../fitness';
 import GoalOnboarding from './GoalOnboarding.vue';
 import BodyTab from './BodyTab.vue';
 import WorkoutsTab from './WorkoutsTab.vue';
@@ -68,8 +68,8 @@ const timePercent = computed(() => {
 });
 
 const unit = computed(() => {
-  const metric = data.value?.progress?.metric;
-  return metric ? METRIC_UNIT[metric] : '';
+  const u = data.value?.progress?.unit;
+  return u ? UNIT_LABEL[u] : '';
 });
 
 function withUnit(n: number | null): string {

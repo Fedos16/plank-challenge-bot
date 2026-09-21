@@ -1,10 +1,10 @@
 import { ApiError } from './api';
-import type { GoalMetric, GoalType, MeasurementKind, Verdict } from './types';
+import type { FitnessOverview, GoalMetric, GoalType, MeasurementKind, MuscleUnit, Verdict } from './types';
 
 export const GOAL_LABEL: Record<GoalType, string> = {
   lose_weight: 'Похудеть',
   lose_fat: 'Снизить % жира',
-  gain_muscle: 'Набрать % мышц',
+  gain_muscle: 'Набрать мышцы',
   custom: 'Своя цель',
 };
 
@@ -15,11 +15,24 @@ export const GOAL_EMOJI: Record<GoalType, string> = {
   custom: '🎯',
 };
 
-export const METRIC_UNIT: Record<GoalMetric, string> = {
-  weightKg: 'кг',
-  bodyFat: '%',
-  muscle: '%',
+export const UNIT_LABEL: Record<MuscleUnit, string> = {
+  kg: 'кг',
+  percent: '%',
 };
+
+/**
+ * В чём человек вводит и видит мышцы. Пока сам не выбирал — как в его цели (у заданных раньше
+ * это проценты), а без цели — килограммы: их показывают приложения весов.
+ */
+export function muscleUnitOf(overview: Pick<FitnessOverview, 'bodyProfile' | 'goal'>): MuscleUnit {
+  return overview.bodyProfile.muscleUnit ?? overview.goal?.muscleUnit ?? 'kg';
+}
+
+/** Мышцы из одной единицы в другую через вес; без веса пересчитать нечем. */
+export function convertMuscle(value: number, weightKg: number, to: MuscleUnit): number {
+  const converted = to === 'kg' ? (weightKg * value) / 100 : (value / weightKg) * 100;
+  return Math.round(converted * 10) / 10;
+}
 
 /** Какой показатель отслеживает цель — зеркало серверной карты. */
 export const GOAL_METRIC: Record<GoalType, GoalMetric | null> = {
@@ -146,6 +159,8 @@ const ERROR_TEXT: Record<string, string> = {
   bad_note: 'Описание слишком длинное',
   bad_weight: 'Вес — от 1 до 500 кг',
   bad_percent: 'Процент — от 0 до 100',
+  bad_muscle_kg: 'Мышцы в килограммах должны быть меньше веса. Если весы показывают проценты — переключите на %',
+  bad_muscle_unit: 'Мышцы считаем в килограммах или процентах',
   bad_date: 'Дата не может быть в будущем',
   bad_kind: 'Неизвестный вид замера',
   bad_value: 'Значение — от 1 до 300 см',

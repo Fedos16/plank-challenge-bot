@@ -23,7 +23,23 @@ export interface WeightPoint {
   weightKg: number;
   bodyFat: number | null;
   water: number | null;
+  /** Доля мышц, % — так присылают весы и так она лежит в базе. */
   muscle: number | null;
+  /** Та же величина массой: вес × доля. */
+  muscleKg: number | null;
+}
+
+/** Мышцы массой из доли. Хранится только доля, килограммы всегда выводятся из неё и веса. */
+export function muscleKgOf(weightKg: number, musclePct: number): number {
+  return round1((weightKg * musclePct) / 100);
+}
+
+/**
+ * Доля мышц из массы. Два знака, а не один, как у остальных процентов: иначе обратный пересчёт
+ * в килограммы на весе под сотню гуляет на ±0,05 кг и человек видит не то число, что вводил.
+ */
+export function musclePctOf(weightKg: number, muscleKg: number): number {
+  return Math.round((muscleKg / weightKg) * 10000) / 100;
 }
 
 /** Профиль весов с телефона владельца: кому уходят его взвешивания. */
@@ -63,6 +79,7 @@ function toPoint(e: WeightEntry): WeightPoint {
     bodyFat: e.bodyFat,
     water: e.water,
     muscle: e.muscle,
+    muscleKg: e.muscle === null ? null : muscleKgOf(e.weightKg, e.muscle),
   };
 }
 
@@ -208,11 +225,13 @@ export interface ManualWeightInput {
   bodyFat?: number | null;
   water?: number | null;
   muscle?: number | null;
+  /** Мышцы массой — кому так привычнее. Задано вместе с `muscle` — побеждают килограммы. */
+  muscleKg?: number | null;
   /** Когда взвесились; по умолчанию — сейчас. */
   measuredAt?: Date;
 }
 
-export type ManualWeightError = 'bad_weight' | 'bad_percent' | 'bad_date';
+export type ManualWeightError = 'bad_weight' | 'bad_percent' | 'bad_muscle_kg' | 'bad_date';
 
 /** Процент состава тела: пусто допустимо, иначе (0..100]. Ноль — «не измерено», как у весов. */
 function manualPercent(v: number | null | undefined): number | null | 'bad' {
@@ -234,8 +253,15 @@ export async function addManualWeight(
   }
   const bodyFat = manualPercent(input.bodyFat);
   const water = manualPercent(input.water);
-  const muscle = manualPercent(input.muscle);
+  let muscle = manualPercent(input.muscle);
   if (bodyFat === 'bad' || water === 'bad' || muscle === 'bad') return 'bad_percent';
+
+  const muscleKg = input.muscleKg;
+  if (muscleKg !== null && muscleKg !== undefined && muscleKg !== 0) {
+    // мышц не бывает больше, чем весит человек
+    if (!Number.isFinite(muscleKg) || muscleKg < 0 || muscleKg >= input.weightKg) return 'bad_muscle_kg';
+    muscle = musclePctOf(input.weightKg, muscleKg);
+  }
 
   const measuredAt = input.measuredAt ?? new Date();
   // будущее не принимаем: запас в сутки покрывает расхождение часов и поясов

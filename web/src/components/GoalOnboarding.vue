@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api } from '../api';
-import type { FitnessOverview, GoalType, Sex } from '../types';
+import type { FitnessOverview, GoalType, MuscleUnit, Sex } from '../types';
 import { haptic } from '../telegram';
-import { GOAL_EMOJI, GOAL_LABEL, GOAL_METRIC, errorText, numOrNull } from '../fitness';
+import {
+  GOAL_EMOJI,
+  GOAL_LABEL,
+  GOAL_METRIC,
+  UNIT_LABEL,
+  convertMuscle,
+  errorText,
+  formatNum,
+  muscleUnitOf,
+  numOrNull,
+} from '../fitness';
+import UnitToggle from './UnitToggle.vue';
 
 const props = defineProps<{ challengeId: number; overview: FitnessOverview }>();
 const emit = defineEmits<{ (e: 'saved', overview: FitnessOverview): void; (e: 'cancel'): void }>();
@@ -23,6 +34,8 @@ const form = reactive({
   startWeightKg: str(goal?.startWeightKg),
   startBodyFat: str(goal?.startBodyFat),
   startMuscle: str(goal?.startMuscle),
+  // у сохранённой цели числа лежат в её единице — с неё и начинаем, а не с привычки из анкеты
+  muscleUnit: goal?.muscleUnit ?? muscleUnitOf(props.overview),
   targetValue: str(goal?.targetValue),
   dailyKcalTarget: str(goal?.dailyKcalTarget),
   note: goal?.note ?? '',
@@ -34,12 +47,49 @@ const prefilled = ref(false);
 
 const goalTypes = Object.keys(GOAL_LABEL) as GoalType[];
 const metric = computed(() => GOAL_METRIC[form.goalType]);
+const muscleUnitLabel = computed(() => UNIT_LABEL[form.muscleUnit]);
 
 const targetLabel = computed(() => {
   if (metric.value === 'weightKg') return 'Целевой вес, кг';
   if (metric.value === 'bodyFat') return 'Целевой % жира';
-  return 'Целевой % мышц';
+  return `Целевые мышцы, ${muscleUnitLabel.value}`;
 });
+
+const targetPlaceholder = computed(() => {
+  if (metric.value === 'weightKg') return 'например, 80';
+  if (metric.value === 'bodyFat') return 'например, 18';
+  return form.muscleUnit === 'kg' ? 'например, 36' : 'например, 42';
+});
+
+/** Точка, от которой считается цель, — из замеров выше. Цель задают, глядя на неё. */
+const startHint = computed(() => {
+  if (!metric.value) return null;
+  const [raw, unit] =
+    metric.value === 'weightKg'
+      ? [form.startWeightKg, 'кг']
+      : metric.value === 'bodyFat'
+        ? [form.startBodyFat, '%']
+        : [form.startMuscle, muscleUnitLabel.value];
+  const value = numOrNull(raw);
+  if (value === null) return { missing: true, text: 'Сначала заполните этот показатель в стартовых замерах выше.' };
+  const direction = form.goalType === 'gain_muscle' ? 'цель должна быть выше' : 'цель должна быть ниже';
+  return { missing: false, text: `Сейчас ${formatNum(value)} ${unit} — ${direction}.` };
+});
+
+/** Смена единицы пересчитывает уже введённое через стартовый вес, чтобы не вбивать заново. */
+function setMuscleUnit(unit: MuscleUnit) {
+  if (unit === form.muscleUnit) return;
+  const weightKg = numOrNull(form.startWeightKg);
+  const convert = (raw: string) => {
+    const value = numOrNull(raw);
+    if (value === null) return raw;
+    // без веса пересчитать нечем: чужую единицу в поле не оставляем
+    return weightKg ? String(convertMuscle(value, weightKg, unit)) : '';
+  };
+  form.startMuscle = convert(form.startMuscle);
+  if (metric.value === 'muscle') form.targetValue = convert(form.targetValue);
+  form.muscleUnit = unit;
+}
 
 /** У кого уже есть взвешивания (умные весы), тому стартовые замеры подставляем сами. */
 onMounted(async () => {
@@ -49,7 +99,7 @@ onMounted(async () => {
     if (!latest) return;
     form.startWeightKg = str(latest.weightKg);
     form.startBodyFat = str(latest.bodyFat);
-    form.startMuscle = str(latest.muscle);
+    form.startMuscle = str(form.muscleUnit === 'kg' ? latest.muscleKg : latest.muscle);
     prefilled.value = true;
   } catch {
     /* без подстановки — не страшно, человек введёт сам */
@@ -65,12 +115,14 @@ async function save() {
       heightCm: numOrNull(form.heightCm),
       birthYear: numOrNull(form.birthYear),
       sex: form.sex || null,
+      muscleUnit: form.muscleUnit,
     });
     const overview = await api.saveGoal(props.challengeId, {
       goalType: form.goalType,
       startWeightKg: numOrNull(form.startWeightKg),
       startBodyFat: numOrNull(form.startBodyFat),
       startMuscle: numOrNull(form.startMuscle),
+      muscleUnit: form.muscleUnit,
       targetValue: metric.value ? numOrNull(form.targetValue) : null,
       dailyKcalTarget: numOrNull(form.dailyKcalTarget),
       note: form.note.trim() || null,
@@ -91,37 +143,13 @@ async function save() {
     <div v-if="isFirst" class="card">
       <h3>👋 Сначала — точка отсчёта</h3>
       <div class="muted">
-        Зафиксируйте стартовые замеры и выберите цель. Вес, % жира и обхваты видите только вы —
-        остальным участникам показывается лишь прогресс к цели в процентах.
+        Запишите, с чем стартуете, и от этого выберите цель. Вес, состав тела и обхваты видите только
+        вы — остальным участникам показывается лишь прогресс к цели в процентах.
       </div>
     </div>
 
     <div class="card">
-      <h3>Цель</h3>
-      <div class="goal-types">
-        <button
-          v-for="t in goalTypes"
-          :key="t"
-          type="button"
-          :class="{ active: form.goalType === t }"
-          @click="form.goalType = t"
-        >
-          <span class="ico">{{ GOAL_EMOJI[t] }}</span>{{ GOAL_LABEL[t] }}
-        </button>
-      </div>
-
-      <label v-if="metric" class="field">
-        <span class="lbl">{{ targetLabel }}</span>
-        <input v-model="form.targetValue" inputmode="decimal" placeholder="например, 80" />
-      </label>
-      <label class="field">
-        <span class="lbl">{{ metric ? 'Комментарий (необязательно)' : 'Опишите свою цель' }}</span>
-        <textarea v-model="form.note" maxlength="500" placeholder="Пробежать 10 км, влезть в костюм…" />
-      </label>
-    </div>
-
-    <div class="card">
-      <h3>Стартовые замеры</h3>
+      <h3>1. Стартовые замеры</h3>
       <div v-if="prefilled" class="muted" style="margin-bottom: 10px">
         Подставили ваше последнее взвешивание — поправьте, если нужно.
       </div>
@@ -135,15 +163,43 @@ async function save() {
           <input v-model="form.startBodyFat" inputmode="decimal" placeholder="—" />
         </label>
         <label class="field">
-          <span class="lbl">Мышцы, %</span>
+          <span class="lbl">Мышцы, {{ muscleUnitLabel }}</span>
           <input v-model="form.startMuscle" inputmode="decimal" placeholder="—" />
         </label>
       </div>
-      <div class="muted">Проценты показывают умные весы. Нет весов — оставьте пустыми.</div>
+      <UnitToggle :model-value="form.muscleUnit" label="Мышцы считать в" @update:model-value="setMuscleUnit" />
+      <div class="muted">Жир и мышцы показывают умные весы. Нет весов — оставьте пустыми.</div>
     </div>
 
     <div class="card">
-      <h3>О себе</h3>
+      <h3>2. Цель</h3>
+      <div class="goal-types">
+        <button
+          v-for="t in goalTypes"
+          :key="t"
+          type="button"
+          :class="{ active: form.goalType === t }"
+          @click="form.goalType = t"
+        >
+          <span class="ico">{{ GOAL_EMOJI[t] }}</span>{{ GOAL_LABEL[t] }}
+        </button>
+      </div>
+
+      <template v-if="metric">
+        <label class="field" style="margin-bottom: 6px">
+          <span class="lbl">{{ targetLabel }}</span>
+          <input v-model="form.targetValue" inputmode="decimal" :placeholder="targetPlaceholder" />
+        </label>
+        <div v-if="startHint" class="start-hint" :class="{ missing: startHint.missing }">{{ startHint.text }}</div>
+      </template>
+      <label class="field">
+        <span class="lbl">{{ metric ? 'Комментарий (необязательно)' : 'Опишите свою цель' }}</span>
+        <textarea v-model="form.note" maxlength="500" placeholder="Пробежать 10 км, влезть в костюм…" />
+      </label>
+    </div>
+
+    <div class="card">
+      <h3>3. О себе</h3>
       <div class="muted" style="margin-bottom: 10px">
         Нужно для расчёта базового обмена и баланса калорий. Можно заполнить позже.
       </div>
@@ -213,5 +269,13 @@ async function save() {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+.start-hint {
+  font-size: 13px;
+  color: var(--hint);
+  margin-bottom: 12px;
+}
+.start-hint.missing {
+  color: var(--red);
 }
 </style>

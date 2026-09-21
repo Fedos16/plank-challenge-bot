@@ -270,6 +270,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       bodyFat: num(body.bodyFat),
       water: num(body.water),
       muscle: num(body.muscle),
+      muscleKg: num(body.muscleKg),
       measuredAt,
     });
     if (typeof result === 'string') return reply.code(400).send({ error: result });

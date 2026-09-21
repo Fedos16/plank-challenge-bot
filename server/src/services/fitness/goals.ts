@@ -9,7 +9,7 @@ import type {
 import { prisma } from '../../lib/prisma';
 import { config } from '../../lib/config';
 import { dateToDay, dayToDate, dayjs, todayDay, type DayStr } from '../../lib/time';
-import { addManualWeight } from '../weight';
+import { addManualWeight, muscleKgOf } from '../weight';
 
 /** Личная цель участника: у каждого в челлендже она своя. */
 export const GOAL_TYPES = ['lose_weight', 'lose_fat', 'gain_muscle', 'custom'] as const;
@@ -20,6 +20,13 @@ export type MeasurementKind = (typeof MEASUREMENT_KINDS)[number];
 
 export const SEXES = ['male', 'female'] as const;
 export type Sex = (typeof SEXES)[number];
+
+/**
+ * В чём считать мышцы. Весы и openScale дают долю, Zepp и Mi Fitness показывают массу —
+ * и для цели «набрать мышцы» масса честнее: на сушке доля растёт сама, без грамма новых мышц.
+ */
+export const MUSCLE_UNITS = ['kg', 'percent'] as const;
+export type MuscleUnit = (typeof MUSCLE_UNITS)[number];
 
 type Metric = 'weightKg' | 'bodyFat' | 'muscle';
 
@@ -37,6 +44,9 @@ const START_FIELD: Record<Metric, 'startWeightKg' | 'startBodyFat' | 'startMuscl
   bodyFat: 'startBodyFat',
   muscle: 'startMuscle',
 };
+
+/** Потолок для мышц в килограммах — отсекает опечатки вроде лишнего нуля. */
+const MUSCLE_KG_MAX = 150;
 
 /** Сколько последних замеров усредняем и за какой срок: биоимпедансные весы шумят. */
 const CURRENT_SAMPLES = 3;
@@ -63,20 +73,30 @@ export function goalProgress(
  * Текущее значение показателя: среднее по последним замерам (до трёх) за неделю перед самым
  * свежим. Окно считается от последнего замера, а не от сегодня: кто не взвешивался две
  * недели, у того прогресс не обнуляется, а остаётся на последней известной точке.
+ *
+ * Мышцы в килограммах считаются по каждому замеру от его же веса и только потом усредняются:
+ * средняя доля, умноженная на средний вес, — уже другое число.
  */
 export function currentMetric(
   entries: Pick<WeightEntry, 'measuredAt' | Metric>[],
   metric: Metric,
+  muscleUnit: MuscleUnit = 'percent',
 ): number | null {
+  const inKg = metric === 'muscle' && muscleUnit === 'kg';
   const withValue = entries
-    .filter((e) => e[metric] !== null && e[metric] !== undefined)
-    .sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime());
+    .map((e) => {
+      const raw = e[metric];
+      if (raw === null || raw === undefined) return null;
+      return { at: e.measuredAt.getTime(), value: inKg ? muscleKgOf(e.weightKg, raw) : raw };
+    })
+    .filter((e): e is { at: number; value: number } => e !== null)
+    .sort((a, b) => b.at - a.at);
   const newest = withValue[0];
   if (!newest) return null;
 
-  const since = newest.measuredAt.getTime() - CURRENT_WINDOW_DAYS * 86_400_000;
-  const sample = withValue.filter((e) => e.measuredAt.getTime() >= since).slice(0, CURRENT_SAMPLES);
-  const sum = sample.reduce((acc, e) => acc + (e[metric] as number), 0);
+  const since = newest.at - CURRENT_WINDOW_DAYS * 86_400_000;
+  const sample = withValue.filter((e) => e.at >= since).slice(0, CURRENT_SAMPLES);
+  const sum = sample.reduce((acc, e) => acc + e.value, 0);
   return Math.round((sum / sample.length) * 10) / 10;
 }
 
@@ -88,6 +108,8 @@ export interface BodyProfileDTO {
   sex: Sex | null;
   activityFactor: number;
   shareBody: boolean;
+  /** В чём человек вводит и видит мышцы; null — ещё не выбирал. */
+  muscleUnit: MuscleUnit | null;
 }
 
 function toBodyProfileDTO(p: UserBodyProfile | null): BodyProfileDTO {
@@ -97,6 +119,7 @@ function toBodyProfileDTO(p: UserBodyProfile | null): BodyProfileDTO {
     sex: (p?.sex as Sex | null | undefined) ?? null,
     activityFactor: p?.activityFactor ?? 1.2,
     shareBody: p?.shareBody ?? false,
+    muscleUnit: (p?.muscleUnit as MuscleUnit | null | undefined) ?? null,
   };
 }
 
@@ -104,7 +127,12 @@ export async function getBodyProfile(userId: number): Promise<BodyProfileDTO> {
   return toBodyProfileDTO(await prisma.userBodyProfile.findUnique({ where: { userId } }));
 }
 
-export type BodyProfileError = 'bad_height' | 'bad_birth_year' | 'bad_sex' | 'bad_activity';
+export type BodyProfileError =
+  | 'bad_height'
+  | 'bad_birth_year'
+  | 'bad_sex'
+  | 'bad_activity'
+  | 'bad_muscle_unit';
 
 /** null — очистить поле, undefined — не трогать. */
 function optionalNumber(v: unknown): number | null | undefined {
@@ -117,7 +145,9 @@ export async function saveBodyProfile(
   userId: number,
   body: Record<string, unknown>,
 ): Promise<BodyProfileDTO | BodyProfileError> {
-  const data: Partial<Pick<UserBodyProfile, 'heightCm' | 'birthYear' | 'sex' | 'activityFactor' | 'shareBody'>> = {};
+  const data: Partial<
+    Pick<UserBodyProfile, 'heightCm' | 'birthYear' | 'sex' | 'activityFactor' | 'shareBody' | 'muscleUnit'>
+  > = {};
 
   const height = optionalNumber(body.heightCm);
   if (height !== undefined) {
@@ -147,6 +177,11 @@ export async function saveBodyProfile(
 
   if (typeof body.shareBody === 'boolean') data.shareBody = body.shareBody;
 
+  if (body.muscleUnit !== undefined && body.muscleUnit !== null) {
+    if (!MUSCLE_UNITS.includes(body.muscleUnit as MuscleUnit)) return 'bad_muscle_unit';
+    data.muscleUnit = body.muscleUnit as MuscleUnit;
+  }
+
   const saved = await prisma.userBodyProfile.upsert({
     where: { userId },
     create: { userId, ...data },
@@ -163,6 +198,8 @@ export interface GoalDTO {
   startWeightKg: number | null;
   startBodyFat: number | null;
   startMuscle: number | null;
+  /** Единица `startMuscle` и — у цели по мышцам — `targetValue`. */
+  muscleUnit: MuscleUnit;
   startDay: DayStr | null;
   dailyKcalTarget: number | null;
   note: string | null;
@@ -171,6 +208,8 @@ export interface GoalDTO {
 export interface GoalProgressDTO {
   /** Показатель цели; у свободной цели — null, и процента нет. */
   metric: Metric | null;
+  /** В чём выражены start, target и current. */
+  unit: MuscleUnit | null;
   start: number | null;
   target: number | null;
   current: number | null;
@@ -184,6 +223,7 @@ function toGoalDTO(g: ParticipantGoal): GoalDTO {
     startWeightKg: g.startWeightKg,
     startBodyFat: g.startBodyFat,
     startMuscle: g.startMuscle,
+    muscleUnit: muscleUnitOf(g),
     startDay: g.startDay ? dateToDay(g.startDay) : null,
     dailyKcalTarget: g.dailyKcalTarget,
     note: g.note,
@@ -199,14 +239,21 @@ async function recentEntries(userId: number): Promise<WeightEntry[]> {
   });
 }
 
+function muscleUnitOf(goal: Pick<ParticipantGoal, 'muscleUnit'>): MuscleUnit {
+  return goal.muscleUnit === 'kg' ? 'kg' : 'percent';
+}
+
 export function progressFor(goal: ParticipantGoal, entries: WeightEntry[]): GoalProgressDTO {
   const metric = GOAL_METRIC[goal.goalType as GoalType] ?? null;
-  if (!metric) return { metric: null, start: null, target: null, current: null, percent: null };
+  if (!metric) return { metric: null, unit: null, start: null, target: null, current: null, percent: null };
 
+  const muscleUnit = muscleUnitOf(goal);
+  const unit: MuscleUnit = metric === 'weightKg' ? 'kg' : metric === 'bodyFat' ? 'percent' : muscleUnit;
   const start = goal[START_FIELD[metric]];
-  const current = currentMetric(entries, metric);
+  const current = currentMetric(entries, metric, muscleUnit);
   return {
     metric,
+    unit,
     start,
     target: goal.targetValue,
     current,
@@ -226,6 +273,8 @@ export async function getGoal(
 
 export type GoalError =
   | 'bad_goal_type'
+  | 'bad_muscle_unit'
+  | 'bad_muscle_kg'
   | 'bad_start'
   | 'bad_target'
   | 'target_direction'
@@ -252,13 +301,23 @@ export async function saveGoal(
   const goalType = body.goalType as GoalType;
   if (!GOAL_TYPES.includes(goalType)) return 'bad_goal_type';
 
+  // без единицы — проценты: так цель задавали до появления килограммов
+  const muscleUnit = (body.muscleUnit ?? 'percent') as MuscleUnit;
+  if (!MUSCLE_UNITS.includes(muscleUnit)) return 'bad_muscle_unit';
+  const muscleMax = muscleUnit === 'kg' ? MUSCLE_KG_MAX : 100;
+
   const startWeightKg = boundedOrNull(body.startWeightKg, 500);
   const startBodyFat = boundedOrNull(body.startBodyFat, 100);
-  const startMuscle = boundedOrNull(body.startMuscle, 100);
+  const startMuscle = boundedOrNull(body.startMuscle, muscleMax);
   if (startWeightKg === 'bad' || startBodyFat === 'bad' || startMuscle === 'bad') return 'bad_start';
+  // мышц не бывает больше, чем весит человек: так ловим проценты, вбитые в поле килограммов
+  if (muscleUnit === 'kg' && startMuscle !== null && startWeightKg !== null && startMuscle >= startWeightKg) {
+    return 'bad_muscle_kg';
+  }
 
   const metric = GOAL_METRIC[goalType];
-  const targetValue = boundedOrNull(body.targetValue, metric === 'weightKg' ? 500 : 100);
+  const targetMax = metric === 'weightKg' ? 500 : metric === 'muscle' ? muscleMax : 100;
+  const targetValue = boundedOrNull(body.targetValue, targetMax);
   if (targetValue === 'bad') return 'bad_target';
 
   if (metric) {
@@ -283,7 +342,16 @@ export async function saveGoal(
     if (note.length > 500) return 'bad_note';
   }
 
-  const data = { goalType, targetValue, startWeightKg, startBodyFat, startMuscle, dailyKcalTarget, note };
+  const data = {
+    goalType,
+    targetValue,
+    startWeightKg,
+    startBodyFat,
+    startMuscle,
+    muscleUnit,
+    dailyKcalTarget,
+    note,
+  };
   const existing = await prisma.participantGoal.findUnique({
     where: { participationId: participation.id },
   });
@@ -306,7 +374,7 @@ export async function saveGoal(
       await addManualWeight(participation.userId, {
         weightKg: startWeightKg,
         bodyFat: startBodyFat,
-        muscle: startMuscle,
+        ...(muscleUnit === 'kg' ? { muscleKg: startMuscle } : { muscle: startMuscle }),
       });
     }
   }

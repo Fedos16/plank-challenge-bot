@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { currentMetric, goalProgress } from '../src/services/fitness/goals';
+import { muscleKgOf, musclePctOf } from '../src/services/weight';
 
 test('goalProgress: похудение — движение вниз', () => {
   assert.equal(goalProgress(90, 80, 90), 0);
@@ -77,4 +78,37 @@ test('currentMetric: пропуски показателя пропускают�
   assert.equal(currentMetric(entries, 'bodyFat'), 21.5);
   assert.equal(currentMetric(entries, 'muscle'), null);
   assert.equal(currentMetric([], 'weightKg'), null);
+});
+
+const withMuscle = (iso: string, weightKg: number, muscle: number | null) => ({
+  ...entry(iso, weightKg),
+  muscle,
+});
+
+test('currentMetric: мышцы в килограммах считаются от веса того же замера', () => {
+  const entries = [
+    withMuscle('2026-10-10T07:00:00Z', 80.0, 45.0), // 36,0 кг
+    withMuscle('2026-10-09T07:00:00Z', 90.0, 40.0), // 36,0 кг
+    withMuscle('2026-10-08T07:00:00Z', 100.0, 39.0), // 39,0 кг
+  ];
+  assert.equal(currentMetric(entries, 'muscle', 'kg'), 37);
+  // проценты — прежнее поведение, и оно же по умолчанию
+  assert.equal(currentMetric(entries, 'muscle', 'percent'), 41.3);
+  assert.equal(currentMetric(entries, 'muscle'), 41.3);
+});
+
+test('currentMetric: единица мышц не трогает остальные показатели', () => {
+  const entries = [withMuscle('2026-10-10T07:00:00Z', 80.0, 45.0)];
+  assert.equal(currentMetric(entries, 'weightKg', 'kg'), 80);
+  assert.equal(currentMetric([withMuscle('2026-10-10T07:00:00Z', 80.0, null)], 'muscle', 'kg'), null);
+});
+
+test('мышцы: килограммы переживают хранение в процентах без потери десятых', () => {
+  // 0,1 кг — шаг ввода; проверяем веса, на которых один знак после запятой в процентах врёт
+  for (const weightKg of [48.3, 67.9, 84.6, 99.9, 123.4]) {
+    for (let kg = 20; kg < weightKg * 0.6; kg += 0.7) {
+      const entered = Math.round(kg * 10) / 10;
+      assert.equal(muscleKgOf(weightKg, musclePctOf(weightKg, entered)), entered, `${entered} кг при весе ${weightKg}`);
+    }
+  }
 });

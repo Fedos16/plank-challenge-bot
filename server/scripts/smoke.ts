@@ -298,6 +298,34 @@ async function fitnessScenario(base: string) {
     const badWeight = await call('POST', `${base}/api/weight`, { weightKg: 900 });
     expect('вес вне диапазона -> 400', [badWeight.status, badWeight.body?.error], [400, 'bad_weight']);
 
+    // мышцы массой: в базе лежит доля, наружу отдаются обе величины
+    const kgAt = new Date(Date.now() + 120_000).toISOString();
+    const wKg = await call('POST', `${base}/api/weight`, { weightKg: 88, muscleKg: 35.2, measuredAt: kgAt });
+    expect('мышцы в кг', [wKg.status, wKg.body.latest.muscle, wKg.body.latest.muscleKg], [200, 40, 35.2]);
+    const tooMuch = await call('POST', `${base}/api/weight`, { weightKg: 88, muscleKg: 88 });
+    expect('мышц больше веса -> 400', [tooMuch.status, tooMuch.body?.error], [400, 'bad_muscle_kg']);
+
+    // цель по мышцам в килограммах: старт, цель и текущее значение — в одной единице
+    const pctInKg = await call('PUT', goalUrl, {
+      goalType: 'gain_muscle', startWeightKg: 40, startMuscle: 42, targetValue: 45, muscleUnit: 'kg',
+    });
+    expect('проценты в поле килограммов -> 400', [pctInKg.status, pctInKg.body?.error], [400, 'bad_muscle_kg']);
+    const kgGoal = await call('PUT', goalUrl, {
+      goalType: 'gain_muscle', startWeightKg: 90, startMuscle: 34, targetValue: 37, muscleUnit: 'kg',
+    });
+    const kp = kgGoal.body.progress;
+    expect('цель в кг мышц', [kgGoal.status, kgGoal.body.goal.muscleUnit, kp.unit], [200, 'kg', 'kg']);
+    expect('прогресс в кг', [kp.start, kp.current, kp.target, kp.percent], [34, 35.2, 37, 40]);
+    // та же цель без единицы — проценты, как до появления килограммов
+    const pctGoal = await call('PUT', goalUrl, { goalType: 'gain_muscle', startWeightKg: 90, startMuscle: 38, targetValue: 42 });
+    expect('цель в % мышц', [pctGoal.body.goal.muscleUnit, pctGoal.body.progress.unit, pctGoal.body.progress.current], ['percent', 'percent', 40]);
+    const unitPref = await call('PUT', `${base}/api/body-profile`, { muscleUnit: 'kg' });
+    expect('единица мышц в анкете', [unitPref.body.muscleUnit, unitPref.body.heightCm], ['kg', 180]);
+    const badUnit = await call('PUT', `${base}/api/body-profile`, { muscleUnit: 'lb' });
+    expect('неизвестная единица -> 400', [badUnit.status, badUnit.body?.error], [400, 'bad_muscle_unit']);
+    // дальше сценарий снова идёт с целью по весу
+    await call('PUT', goalUrl, { goalType: 'lose_weight', startWeightKg: 90, targetValue: 78 });
+
     // обхваты: одно значение вида на день
     await call('PUT', `${base}/api/measurements`, { kind: 'waist', value: 92.4 });
     const m2 = await call('PUT', `${base}/api/measurements`, { kind: 'waist', value: 91 });

@@ -13,8 +13,8 @@ import { formatDateRu, formatDateTimeRu, todayISO } from '../helpers';
 import {
   GOAL_EMOJI,
   GOAL_LABEL,
-  METRIC_UNIT,
   SOURCE_LABEL,
+  UNIT_LABEL,
   VERDICT_LABEL,
   errorText,
   formatNum,
@@ -216,8 +216,8 @@ async function setExcluded(p: AdminFitnessParticipant, w: Workout, excluded: boo
 
 function progressText(p: AdminFitnessParticipant): string {
   const g = p.progress;
-  if (!g?.metric) return '';
-  const unit = METRIC_UNIT[g.metric];
+  if (!g?.unit) return '';
+  const unit = UNIT_LABEL[g.unit];
   const v = (n: number | null) => (n === null ? '—' : formatNum(n));
   return `${v(g.start)} → ${v(g.current)} → ${v(g.target)} ${unit}`;
 }

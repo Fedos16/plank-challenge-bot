@@ -302,7 +302,10 @@ export interface WeightPoint {
   weightKg: number;
   bodyFat: number | null;
   water: number | null;
+  /** Доля мышц, % — так присылают весы. */
   muscle: number | null;
+  /** Та же величина массой: вес × доля. */
+  muscleKg: number | null;
 }
 
 export interface ScaleProfile {
@@ -331,6 +334,8 @@ export interface WeightOverview {
 export type GoalType = 'lose_weight' | 'lose_fat' | 'gain_muscle' | 'custom';
 export type GoalMetric = 'weightKg' | 'bodyFat' | 'muscle';
 export type Sex = 'male' | 'female';
+/** В чём считать мышцы: масса (Zepp, Mi Fitness) или доля (так присылают весы). */
+export type MuscleUnit = 'kg' | 'percent';
 export type MeasurementKind = 'waist' | 'chest' | 'hips' | 'thigh' | 'biceps' | 'neck';
 
 export interface BodyProfile {
@@ -340,6 +345,8 @@ export interface BodyProfile {
   activityFactor: number;
   /** Показывать другим участникам вес и % жира, а не только процент к цели. */
   shareBody: boolean;
+  /** В чём человек вводит и видит мышцы; null — ещё не выбирал. */
+  muscleUnit: MuscleUnit | null;
 }
 
 export interface Goal {
@@ -348,6 +355,8 @@ export interface Goal {
   startWeightKg: number | null;
   startBodyFat: number | null;
   startMuscle: number | null;
+  /** Единица startMuscle и — у цели по мышцам — targetValue. */
+  muscleUnit: MuscleUnit;
   startDay: string | null;
   dailyKcalTarget: number | null;
   note: string | null;
@@ -356,6 +365,8 @@ export interface Goal {
 export interface GoalProgress {
   /** Показатель цели; у свободной цели — null, и процента нет. */
   metric: GoalMetric | null;
+  /** В чём выражены start, target и current. */
+  unit: MuscleUnit | null;
   start: number | null;
   target: number | null;
   current: number | null;
@@ -385,7 +396,7 @@ export interface FitnessParticipant {
   goalType: GoalType | null;
   progressPercent: number | null;
   /** Цифры видны, только если участник сам открыл их в анкете. */
-  body: { start: number | null; current: number | null; target: number | null } | null;
+  body: Pick<GoalProgress, 'unit' | 'start' | 'current' | 'target'> | null;
 }
 
 export interface FitnessOverview {
@@ -507,6 +518,7 @@ export interface GoalInput {
   startWeightKg: number | null;
   startBodyFat: number | null;
   startMuscle: number | null;
+  muscleUnit: MuscleUnit;
   dailyKcalTarget: number | null;
   note: string | null;
 }
@@ -522,6 +534,8 @@ export interface ManualWeightInput {
   weightKg: number;
   bodyFat?: number | null;
   muscle?: number | null;
+  /** Мышцы массой — вместо доли. */
+  muscleKg?: number | null;
   water?: number | null;
   measuredAt?: string;
 }
