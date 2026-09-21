@@ -8,6 +8,7 @@ interface TelegramWebApp {
   MainButton: { hide: () => void };
   HapticFeedback?: { impactOccurred: (s: string) => void; notificationOccurred: (t: string) => void };
   showConfirm?: (message: string, callback: (ok: boolean) => void) => void;
+  openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
 }
 
 declare global {
@@ -37,6 +38,22 @@ export function haptic(type: 'success' | 'error' | 'warning' = 'success'): void 
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Открыть ссылку во внешнем браузере. Для OAuth это обязательно: внутри WebView Telegram
+ * страница согласия провайдера не сможет вернуть пользователя обратно в приложение.
+ */
+export function openExternal(url: string): void {
+  if (tg?.openLink) {
+    try {
+      tg.openLink(url);
+      return;
+    } catch {
+      /* fallthrough */
+    }
+  }
+  window.open(url, '_blank', 'noopener');
 }
 
 /** Диалог подтверждения: нативный в Telegram, иначе window.confirm. */

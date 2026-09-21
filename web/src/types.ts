@@ -569,3 +569,20 @@ export interface AdminFitnessParticipant {
   week: { done: number; required: number } | null;
   totalCounted: number;
 }
+
+// ---------- Подключения источников тренировок ----------
+
+export interface IntegrationInfo {
+  provider: string;
+  /** active — работает; reauth_required — доступ отозван или истёк, нужно подключить заново. */
+  status: 'active' | 'reauth_required' | 'disabled';
+  lastSyncAt: string | null;
+  lastEventAt: string | null;
+  lastError: string | null;
+}
+
+export interface IntegrationsResponse {
+  /** Что настроено на сервере: без ключей приложения провайдер не показывается. */
+  available: { whoop: boolean };
+  connected: IntegrationInfo[];
+}

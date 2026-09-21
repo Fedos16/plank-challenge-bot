@@ -9,6 +9,7 @@ import GoalOnboarding from './GoalOnboarding.vue';
 import BodyTab from './BodyTab.vue';
 import WorkoutsTab from './WorkoutsTab.vue';
 import FitnessLeaderboard from './FitnessLeaderboard.vue';
+import ConnectionsCard from './ConnectionsCard.vue';
 
 const props = defineProps<{ challengeId: number }>();
 const emit = defineEmits<{ (e: 'back'): void; (e: 'left'): void }>();
@@ -294,6 +295,8 @@ watch(() => props.challengeId, load);
               Неделя — 7 дней от даты старта. Не набрал норму — минус жизнь, жизни кончились — выбыл.
             </div>
           </div>
+
+          <ConnectionsCard @changed="refresh" />
 
           <div v-if="data.challenge.rulesText" class="card">
             <h3>Правила</h3>

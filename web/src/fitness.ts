@@ -71,8 +71,12 @@ export const SPORT_EMOJI: Record<string, string> = {
   other: '💪',
 };
 
-/** Название тренировки: свой вид — по справочнику, присланный устройством — как есть. */
+/**
+ * Название тренировки. Вид, которого нет в нашем справочнике, устройство присылает как «other»
+ * со своим названием — показываем его («Underwater hockey»), а не безликое «Другое».
+ */
 export function sportTitle(w: { sport: string; sportRaw: string | null }): string {
+  if (w.sport === 'other' && w.sportRaw) return w.sportRaw.charAt(0).toUpperCase() + w.sportRaw.slice(1);
   return SPORT_LABEL[w.sport] ?? w.sportRaw ?? w.sport;
 }
 
@@ -108,6 +112,7 @@ export function hearts(left: number, total: number): string {
 }
 
 const ERROR_TEXT: Record<string, string> = {
+  whoop_disabled: 'Интеграция с WHOOP на сервере не настроена',
   bad_sport: 'Выберите вид тренировки',
   bad_started_at: 'Проверьте дату: не в будущем и не старше года',
   bad_workout_duration: 'Длительность — от 1 минуты до суток',

@@ -11,6 +11,7 @@ import { sendDailyReport } from '../services/report';
 import { sendDailyReminder, sendPersonalReminders } from '../services/reminders';
 import { evaluateClosedWeeks } from '../services/fitness/evaluation';
 import { announceWeekResults } from '../services/fitness/fitnessReport';
+import { reconcileWhoop } from '../services/whoop';
 
 /** Планка: отчёт и напоминания по расписанию из настроек челленджа. */
 async function runPlankJobs(challenge: Challenge, hhmm: string): Promise<void> {
@@ -80,8 +81,15 @@ export function startScheduler(): void {
     }
 
     // Отдельный try: сбой фитнеса не должен задевать планку, и наоборот
+    const minute = new Date().getMinutes();
     try {
-      if (new Date().getMinutes() % 10 === 0) await runFitnessJobs();
+      // Сверка с WHOOP — до оценки недель: опоздавшая тренировка должна успеть попасть в итог
+      if (minute % 30 === 0) await reconcileWhoop();
+    } catch (err) {
+      console.error('[scheduler] Ошибка сверки WHOOP:', err);
+    }
+    try {
+      if (minute % 10 === 0) await runFitnessJobs();
     } catch (err) {
       console.error('[scheduler] Ошибка фитнес-блока:', err);
     }

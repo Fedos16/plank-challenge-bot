@@ -31,6 +31,7 @@ model User {
   bodyProfile        UserBodyProfile?
   measurements       BodyMeasurement[]
   workouts           Workout[]
+  integrations       Integration[]
 
   @@index([scaleToken])
 }
@@ -396,4 +397,35 @@ model WeekResult {
 
   @@unique([participationId, weekIndex])
   @@index([challengeId, weekIndex])
+}
+
+// Подключённый источник тренировок: один на пользователя и провайдера.
+// Облачные провайдеры (WHOOP) живут на OAuth-токенах, телефонные хабы (Health Auto Export,
+// Health Connect) — на личном ingestToken, как умные весы.
+model Integration {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  provider        String // whoop | hae | health_connect | strava
+  status          String    @default("active") // active | reauth_required | disabled
+  /// Секрет для push-приёмника хаба. Уникален: по нему находим владельца запроса.
+  ingestToken     String?   @unique
+  /// OAuth-токены лежат зашифрованными (AES-256-GCM, ключ TOKEN_ENC_KEY): утечка дампа
+  /// базы не должна отдавать доступ к чужим браслетам.
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  expiresAt       DateTime?
+  scope           String?
+  /// Идентификатор пользователя у провайдера: вебхук WHOOP присылает именно его
+  externalUserId  String?
+  lastSyncAt      DateTime?
+  lastEventAt     DateTime?
+  backfilledAt    DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@unique([provider, externalUserId])
 }

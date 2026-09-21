@@ -1,4 +1,4 @@
-import type { Challenge, Workout } from '@prisma/client';
+import type { Challenge, Prisma, Workout } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { dateToDay, deadlineInstant, dayjs, type DayStr } from '../../lib/time';
 import type { DayWindow } from '../../lib/weeks';
@@ -249,6 +249,89 @@ export async function deleteWorkout(userId: number, id: number): Promise<boolean
   const existing = await prisma.workout.findFirst({ where: { id, userId, deletedAt: null } });
   if (!existing) return false;
   await prisma.workout.update({ where: { id }, data: { deletedAt: new Date(), duplicateOfId: null } });
+  await reassignDuplicates(userId, existing.startedAt, existing.durationSec);
+  return true;
+}
+
+// ---------- тренировки из внешних источников ----------
+
+/** Тренировка, как её отдал парсер источника: уже нормализована, без привязки к пользователю. */
+export interface ExternalWorkout {
+  externalId: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  durationSec: number;
+  tzOffsetMin: number | null;
+  sport: string;
+  sportRaw: string | null;
+  kcal: number | null;
+  avgHr: number | null;
+  maxHr: number | null;
+  distanceM: number | null;
+  strain: number | null;
+  scoreState: string | null;
+  /** Урезанный исходник для отладки парсера — без массивов (пульс по секундам, маршрут). */
+  raw: Record<string, unknown> | null;
+}
+
+export interface SaveExternalResult {
+  created: Workout[];
+  updated: Workout[];
+  /** Пользователь удалил эту тренировку у нас — синхронизация её не возвращает. */
+  skippedDeleted: number;
+}
+
+/**
+ * Сохраняет тренировки источника идемпотентно: одна и та же запись приходит много раз
+ * (ретраи вебхука, повторная сверка, бэкфилл истории). Ключ — (пользователь, источник,
+ * внешний id). Снятие с зачёта админом и тумбстоун пользователя синхронизация не трогает.
+ */
+export async function saveExternalWorkouts(
+  userId: number,
+  source: string,
+  items: ExternalWorkout[],
+): Promise<SaveExternalResult> {
+  const result: SaveExternalResult = { created: [], updated: [], skippedDeleted: 0 };
+
+  for (const item of items) {
+    const key = { userId_source_externalId: { userId, source, externalId: item.externalId } };
+    const { externalId, raw, ...fields } = item;
+    const data = { ...fields, raw: (raw ?? undefined) as Prisma.InputJsonValue | undefined };
+
+    let existing = await prisma.workout.findUnique({ where: key });
+    if (!existing) {
+      try {
+        result.created.push(await prisma.workout.create({ data: { userId, source, externalId, ...data } }));
+        continue;
+      } catch {
+        // гонка с параллельной доставкой того же события: запись уже создана — обновим её
+        existing = await prisma.workout.findUnique({ where: key });
+        if (!existing) throw new Error('external workout create failed');
+      }
+    }
+    if (existing.deletedAt) {
+      result.skippedDeleted += 1;
+      continue;
+    }
+    result.updated.push(await prisma.workout.update({ where: { id: existing.id }, data }));
+  }
+
+  for (const w of [...result.created, ...result.updated]) {
+    await reassignDuplicates(userId, w.startedAt, w.durationSec);
+  }
+  return result;
+}
+
+/**
+ * Источник сообщил, что тренировка удалена (человек стёр её в приложении браслета).
+ * Это точечное событие, и оно обратимо — в отличие от «очистить всё», которому мы не верим.
+ */
+export async function deleteExternalWorkout(userId: number, source: string, externalId: string): Promise<boolean> {
+  const existing = await prisma.workout.findUnique({
+    where: { userId_source_externalId: { userId, source, externalId } },
+  });
+  if (!existing || existing.deletedAt) return false;
+  await prisma.workout.update({ where: { id: existing.id }, data: { deletedAt: new Date(), duplicateOfId: null } });
   await reassignDuplicates(userId, existing.startedAt, existing.durationSec);
   return true;
 }

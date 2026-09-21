@@ -5,7 +5,7 @@ import { weekCloseInstant, weekRange } from '../../lib/weeks';
 import { challengeEndDay } from '../challenge';
 import { escapeHtml } from '../report';
 import { displayName } from '../users';
-import { livesOf, type CreatedWeekResult } from './evaluation';
+import { livesOf, type CreatedWeekResult, type UpgradedWeek } from './evaluation';
 
 /** Старше этого итог недели — уже история: при догоне простоя о нём в ЛС не пишем. */
 const FRESH_MS = 7 * 86_400_000;
@@ -42,6 +42,30 @@ export async function buildWeekSummary(ch: Challenge, weekIndex: number): Promis
     else lines.push(`✅ ${name} — ${score} · ${hearts(state?.livesAfter ?? lives.left, lives.total)}`);
   }
   return lines.join('\n');
+}
+
+/** Хорошая новость в ЛС: опоздавшая синхронизация закрыла норму уже оценённой недели. */
+export async function announceUpgrades(upgraded: UpgradedWeek[]): Promise<number> {
+  if (upgraded.length === 0) return 0;
+  const { bot } = await import('../../bot/bot');
+  if (!bot) return 0;
+
+  let sent = 0;
+  for (const u of upgraded) {
+    const text = [
+      `💚 <b>Неделя ${u.row.weekIndex + 1} пересчитана</b>: ${u.row.done} из ${u.row.required}.`,
+      u.lifeReturned
+        ? `Тренировка досинхронизировалась с устройства, норма закрыта — жизнь возвращена («${escapeHtml(u.challenge.title)}»).`
+        : 'Тренировка досинхронизировалась с устройства, норма закрыта.',
+    ];
+    try {
+      await bot.api.sendMessage(Number(u.user.telegramId), text.join('\n'), { parse_mode: 'HTML' });
+      sent += 1;
+    } catch {
+      // пользователь не начинал диалог с ботом — пропускаем
+    }
+  }
+  return sent;
 }
 
 /**

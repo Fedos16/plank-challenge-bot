@@ -101,6 +101,49 @@ export async function evaluateClosedWeeks(
   return created;
 }
 
+export interface UpgradedWeek {
+  challenge: Challenge;
+  user: User;
+  row: WeekResult;
+  /** Неделя стоила жизни — значит, жизнь вернулась (прощённая её и так не снимала). */
+  lifeReturned: boolean;
+}
+
+/**
+ * Исправляет провал закрытой недели, если норму закрыла тренировка, досинхронизировавшаяся
+ * с устройства уже после подведения итога: телефон был без сети, браслет разрядился.
+ * Только в сторону «провал → зачёт» и только для автоматических источников — ручная запись
+ * задним числом итог не меняет, иначе его можно было бы переписать, дорисовав тренировку.
+ */
+export async function upgradeClosedWeeks(userId: number, startedAts: Date[]): Promise<UpgradedWeek[]> {
+  if (startedAts.length === 0) return [];
+  const participations = await prisma.participation.findMany({
+    where: { userId, status: 'active', challenge: { isActive: true, kind: 'fitness' } },
+    include: { challenge: true, user: true },
+  });
+
+  const upgraded: UpgradedWeek[] = [];
+  for (const p of participations) {
+    const ch = p.challenge;
+    const startDay = dateToDay(ch.startDate);
+    const indexes = [...new Set(startedAts.map((at) => weekIndexOf(startDay, challengeDay(at, ch.timezone))))];
+    const failed = await prisma.weekResult.findMany({
+      where: { participationId: p.id, weekIndex: { in: indexes }, passed: false },
+    });
+
+    for (const row of failed) {
+      const c = await computeWeek(ch, p, row.weekIndex);
+      if (!c?.passed) continue;
+      const saved = await prisma.weekResult.update({
+        where: { id: row.id },
+        data: { done: c.done, required: c.required, passed: true, upgradedAt: new Date() },
+      });
+      upgraded.push({ challenge: ch, user: p.user, row: saved, lifeReturned: !row.forgiven });
+    }
+  }
+  return upgraded;
+}
+
 // ---------- состояние участника ----------
 
 export type WeekStatus = 'passed' | 'failed' | 'forgiven';

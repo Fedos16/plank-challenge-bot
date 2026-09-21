@@ -1,6 +1,21 @@
-import { buildServer } from '../src/api/server';
+import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createHmac } from 'node:crypto';
 
 const HEADERS = { 'X-Dev-Telegram-Id': '999', 'Content-Type': 'application/json' };
+
+const BASE = 'http://127.0.0.1:3001';
+const WHOOP_STUB_PORT = 3002;
+const WHOOP_SECRET = 'smoke-whoop-secret';
+
+// Конфиг читает env при загрузке модуля, поэтому переменные задаются до импорта сервера
+// (он ниже — динамический). WHOOP смотрит в локальную заглушку, а не в настоящий API.
+Object.assign(process.env, {
+  WEBAPP_URL: BASE,
+  WHOOP_CLIENT_ID: 'smoke-whoop-client',
+  WHOOP_CLIENT_SECRET: WHOOP_SECRET,
+  WHOOP_API_BASE: `http://127.0.0.1:${WHOOP_STUB_PORT}`,
+  TOKEN_ENC_KEY: 'smoke-token-enc-key',
+});
 
 async function jget(url: string) {
   return (await fetch(url, { headers: HEADERS })).json() as Promise<any>;
@@ -10,9 +25,10 @@ async function jpost(url: string, body: unknown) {
 }
 
 async function main() {
+  const { buildServer } = await import('../src/api/server');
   const app = await buildServer();
   await app.listen({ host: '127.0.0.1', port: 3001 });
-  const base = 'http://127.0.0.1:3001';
+  const base = BASE;
 
   const ch = await jget(`${base}/api/challenge`);
   console.log('challenge:', ch.title, '| bank=', ch.bank, '| day=', ch.dayNumber, '| min=', ch.minDurationSec);
@@ -167,6 +183,7 @@ async function main() {
 
   await fitnessScenario(base);
   await gameScenario(base);
+  await whoopScenario(base);
 
   await app.close();
   console.log('SMOKE OK');
@@ -486,6 +503,254 @@ async function gameScenario(base: string) {
   } finally {
     await prisma.challenge.delete({ where: { id } }).catch(() => undefined);
     await cleanWorkouts();
+  }
+}
+
+/** Ждёт, пока условие станет истинным: обработка вебхука и бэкфилл идут в фоне. */
+async function until<T>(what: string, probe: () => Promise<T | undefined | null | false>, timeoutMs = 8000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await probe();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`whoop: не дождались — ${what}`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (c) => (data += c));
+    req.on('end', () => resolve(data));
+  });
+}
+
+/**
+ * Заглушка WHOOP API: токены с ротацией refresh token (старый после использования мёртв —
+ * как у настоящего), профиль, постраничный список тренировок и тренировка по id.
+ */
+function startWhoopStub() {
+  const state = {
+    /** refresh token → access token: у каждого подключения своя пара. */
+    sessions: new Map<string, string>(),
+    issued: 0,
+    refreshCalls: 0,
+    revoked: false,
+    workouts: new Map<string, Record<string, unknown>>(),
+  };
+  const issue = () => {
+    state.issued += 1;
+    const pair = { access: `stub-access-${state.issued}`, refresh: `stub-refresh-${state.issued}` };
+    state.sessions.set(pair.refresh, pair.access);
+    return { access_token: pair.access, refresh_token: pair.refresh, expires_in: 3600, scope: 'offline' };
+  };
+  const json = (res: import('node:http').ServerResponse, code: number, body: unknown) => {
+    res.writeHead(code, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(body));
+  };
+
+  const server: Server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://stub');
+    if (url.pathname === '/oauth/oauth2/token') {
+      const form = new URLSearchParams(await readBody(req));
+      if (form.get('client_secret') !== WHOOP_SECRET) return json(res, 401, { error: 'invalid_client' });
+      if (form.get('grant_type') === 'authorization_code') {
+        return form.get('code') === 'good-code' ? json(res, 200, issue()) : json(res, 400, { error: 'invalid_grant' });
+      }
+      state.refreshCalls += 1;
+      // небольшая задержка: без неё параллельные обновления не успели бы пересечься
+      await new Promise((r) => setTimeout(r, 150));
+      // использованный refresh token мёртв вместе со своим access token
+      if (!state.sessions.delete(form.get('refresh_token') ?? '')) return json(res, 400, { error: 'invalid_grant' });
+      return json(res, 200, issue());
+    }
+
+    const bearer = (req.headers.authorization ?? '').replace(/^Bearer /, '');
+    if (![...state.sessions.values()].includes(bearer)) return json(res, 401, { error: 'unauthorized' });
+    if (url.pathname === '/developer/v2/user/profile/basic') return json(res, 200, { user_id: 9012 });
+    if (url.pathname === '/developer/v2/user/access' && req.method === 'DELETE') {
+      state.revoked = true;
+      res.writeHead(204);
+      return res.end();
+    }
+    if (url.pathname === '/developer/v2/activity/workout') {
+      const since = new Date(url.searchParams.get('start') ?? 0).getTime();
+      const all = [...state.workouts.values()].filter((w) => new Date(String(w.start)).getTime() >= since);
+      // по две записи на страницу — чтобы проверить пагинацию
+      const offset = Number(url.searchParams.get('nextToken') ?? 0);
+      const records = all.slice(offset, offset + 2);
+      return json(res, 200, { records, next_token: offset + 2 < all.length ? String(offset + 2) : null });
+    }
+    const one = /^\/developer\/v2\/activity\/workout\/(.+)$/.exec(url.pathname);
+    if (one) {
+      const w = state.workouts.get(decodeURIComponent(one[1]!));
+      return w ? json(res, 200, w) : json(res, 404, { error: 'not_found' });
+    }
+    return json(res, 404, { error: 'not_found' });
+  });
+
+  return new Promise<{ state: typeof state; close: () => Promise<void> }>((resolve) => {
+    server.listen(WHOOP_STUB_PORT, '127.0.0.1', () =>
+      resolve({ state, close: () => new Promise<void>((done) => server.close(() => done())) }),
+    );
+  });
+}
+
+/** WHOOP: OAuth, выгрузка истории, вебхуки с подписью, ротация токена, тумбстоуны, возврат жизни. */
+async function whoopScenario(base: string) {
+  console.log('--- WHOOP (через локальную заглушку API) ---');
+  const { prisma } = await import('../src/lib/prisma');
+  const { reconcileWhoop } = await import('../src/services/whoop');
+  const admin = `${base}/api/admin/challenges`;
+  const stub = await startWhoopStub();
+
+  const noon = (offset: number, minutes = 0) =>
+    new Date(new Date(`${mskDay(offset)}T09:00:00.000Z`).getTime() + minutes * 60_000).toISOString();
+  const whoopWorkout = (id: string, offset: number, minutes = 50) => ({
+    id,
+    user_id: 9012,
+    start: noon(offset),
+    end: noon(offset, minutes),
+    timezone_offset: '+03:00',
+    sport_name: 'running',
+    score_state: 'SCORED',
+    score: { strain: 9.1, average_heart_rate: 140, max_heart_rate: 171, kilojoule: 2092, distance_meter: 8000 },
+  });
+  const webhook = (body: Record<string, unknown>, opts: { secret?: string; timestamp?: string } = {}) => {
+    const raw = JSON.stringify(body);
+    const timestamp = opts.timestamp ?? String(Date.now());
+    const signature = createHmac('sha256', opts.secret ?? WHOOP_SECRET).update(timestamp).update(raw).digest('base64');
+    return fetch(`${base}/api/webhooks/whoop`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-WHOOP-Signature': signature,
+        'X-WHOOP-Signature-Timestamp': timestamp,
+      },
+      body: raw,
+    });
+  };
+
+  const clean = async () => {
+    await prisma.integration.deleteMany({ where: { user: { telegramId: { in: [999n, 998n] } } } });
+    await prisma.workout.deleteMany({ where: { user: { telegramId: 999n } } });
+  };
+  await clean();
+
+  // Челлендж с двумя уже проваленными неделями: на нём проверим возврат жизни
+  const created = await call('POST', admin, {
+    title: 'Smoke WHOOP', startDate: mskDay(-17), durationDays: 100, weeklyWorkouts: 3, lives: 3,
+  });
+  const id: number = created.body.id;
+  try {
+    await call('POST', `${base}/api/challenges/${id}/join`, {});
+    await prisma.participation.updateMany({
+      where: { challengeId: id },
+      data: { joinedAt: new Date(`${mskDay(-18)}T09:00:00.000Z`) },
+    });
+    await call('POST', `${admin}/${id}/evaluate`, {});
+    const game = async () => (await jget(`${base}/api/challenges/${id}/fitness`)).game;
+    expect('до WHOOP: две недели провалены', (await game()).lives.left, 1);
+
+    // --- подключение ---
+    const list0 = await jget(`${base}/api/integrations`);
+    expect('WHOOP доступен, но не подключён', [list0.available.whoop, list0.connected.length], [true, 0]);
+
+    const connect = await call('POST', `${base}/api/integrations/whoop/connect`);
+    const authUrl = new URL(connect.body.url);
+    const state = authUrl.searchParams.get('state')!;
+    expect(
+      'ссылка согласия',
+      [authUrl.pathname, authUrl.searchParams.get('redirect_uri'), authUrl.searchParams.get('scope'), state.length >= 8],
+      ['/oauth/oauth2/auth', `${base}/api/oauth/whoop/callback`, 'offline read:workout read:profile', true],
+    );
+
+    const callback = (query: string) => fetch(`${base}/api/oauth/whoop/callback?${query}`);
+    expect('подделанный state -> 400', (await callback(`code=good-code&state=${state.slice(0, -2)}xx`)).status, 400);
+    expect('отказ пользователя -> 400', (await callback('error=access_denied')).status, 400);
+    expect('плохой code -> 400', (await callback(`code=bad&state=${state}`)).status, 400);
+
+    // три тренировки истории во второй неделе челленджа (дни −10…−4): две страницы по две записи
+    for (const [wid, d] of [['w-1', -10], ['w-2', -9], ['w-3', -8]] as const) {
+      stub.state.workouts.set(wid, whoopWorkout(wid, d));
+    }
+    const ok = await callback(`code=good-code&state=${state}`);
+    expect('callback', [ok.status, (await ok.text()).includes('WHOOP подключён')], [200, true]);
+
+    const journalUrl = `${base}/api/challenges/${id}/fitness/workouts`;
+    const whoopIds = async () =>
+      ((await jget(journalUrl)).workouts as any[]).filter((w) => w.source === 'whoop').map((w) => w.id);
+    await until('выгрузка истории', async () => (await whoopIds()).length === 3);
+    const first = ((await jget(journalUrl)).workouts as any[]).find((w) => w.source === 'whoop');
+    expect('тренировка с браслета', [first.sport, first.durationMin, first.kcal, first.verdict], ['run', 50, 500, 'counted']);
+
+    const stored = await prisma.integration.findFirstOrThrow({ where: { user: { telegramId: 999n } } });
+    expect(
+      'токены в базе зашифрованы',
+      [stored.accessTokenEnc?.startsWith('v1.'), stored.accessTokenEnc?.includes('stub-access'), stored.externalUserId],
+      [true, false, '9012'],
+    );
+
+    // опоздавшая синхронизация закрыла норму уже оценённой недели — жизнь возвращается сама
+    const g = await until('возврат жизни', async () => {
+      const state = await game();
+      return state.lives.left === 2 ? state : null;
+    });
+    const week2 = g.history.find((w: any) => w.weekNumber === 2);
+    expect('неделя исправлена синхронизацией', [week2.status, week2.done, week2.upgraded], ['passed', 3, true]);
+
+    // --- вебхуки ---
+    stub.state.workouts.set('w-new', whoopWorkout('w-new', -1));
+    const event = { user_id: 9012, id: 'w-new', type: 'workout.updated', trace_id: 'trace-1' };
+    expect('чужая подпись -> 401', (await webhook(event, { secret: 'wrong' })).status, 401);
+    expect('протухшая метка времени -> 401', (await webhook(event, { timestamp: String(Date.now() - 3 * 3600_000) })).status, 401);
+    expect('вебхук принят', (await webhook(event)).status, 204);
+    await until('тренировка из вебхука', async () => (await whoopIds()).length === 4);
+    expect('сон и восстановление игнорируются', (await webhook({ user_id: 9012, id: 's-1', type: 'sleep.updated' })).status, 204);
+    expect('повтор вебхука не задваивает', [(await webhook(event)).status, (await whoopIds()).length], [204, 4]);
+
+    // --- ротация токена: три одновременных события на протухшем токене — одно обновление ---
+    await prisma.integration.update({ where: { id: stored.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const refreshesBefore = stub.state.refreshCalls;
+    await Promise.all([webhook(event), webhook(event), webhook(event)]);
+    await until('обновление токена', async () => stub.state.refreshCalls > refreshesBefore);
+    await new Promise((r) => setTimeout(r, 600));
+    const after = await prisma.integration.findUniqueOrThrow({ where: { id: stored.id } });
+    expect(
+      'refresh token обновлён один раз, интеграция жива',
+      [stub.state.refreshCalls - refreshesBefore, after.status, after.expiresAt! > new Date()],
+      [1, 'active', true],
+    );
+
+    // --- удаление ---
+    const newId = ((await jget(journalUrl)).workouts as any[]).find((w) => w.startedAt === noon(-1)).id;
+    expect('удаление своей тренировки', (await call('DELETE', `${base}/api/workouts/${newId}`)).status, 200);
+    await reconcileWhoop();
+    expect('сверка не воскрешает удалённую', (await whoopIds()).length, 3);
+
+    stub.state.workouts.delete('w-3');
+    await webhook({ user_id: 9012, id: 'w-3', type: 'workout.deleted', trace_id: 'trace-2' });
+    await until('удаление из вебхука', async () => (await whoopIds()).length === 2);
+
+    // --- один браслет — один человек ---
+    const other = { ...HEADERS, 'X-Dev-Telegram-Id': '998' };
+    const otherConnect = await call('POST', `${base}/api/integrations/whoop/connect`, undefined, other);
+    const otherState = new URL(otherConnect.body.url).searchParams.get('state')!;
+    const taken = await callback(`code=good-code&state=${otherState}`);
+    expect('чужой браслет не подключить', [taken.status, (await taken.text()).includes('уже подключён')], [400, true]);
+
+    // --- отключение: доступ отозван у WHOOP, тренировки остаются ---
+    expect('отключение', (await call('DELETE', `${base}/api/integrations/whoop`)).status, 200);
+    expect(
+      'после отключения',
+      [stub.state.revoked, (await jget(`${base}/api/integrations`)).connected.length, (await whoopIds()).length],
+      [true, 0, 2],
+    );
+    expect('вебхук отключённого — без ошибки и без записи', (await webhook(event)).status, 204);
+  } finally {
+    await prisma.challenge.delete({ where: { id } }).catch(() => undefined);
+    await clean();
+    await stub.close();
   }
 }
 

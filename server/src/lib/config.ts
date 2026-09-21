@@ -37,7 +37,24 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   /** Короткое имя Mini App из BotFather (/newapp). Если пусто — используется ?startapp у Main Mini App. */
   miniAppShortName: process.env.MINIAPP_SHORT_NAME ?? '',
+  /**
+   * WHOOP: приложение с developer.whoop.com. Без ключей интеграция выключена целиком —
+   * как бот без BOT_TOKEN. apiBase подменяется в smoke на локальную заглушку.
+   */
+  whoop: {
+    clientId: process.env.WHOOP_CLIENT_ID ?? '',
+    clientSecret: process.env.WHOOP_CLIENT_SECRET ?? '',
+    apiBase: (process.env.WHOOP_API_BASE ?? 'https://api.prod.whoop.com').replace(/\/+$/, ''),
+  },
+  /** Ключ шифрования OAuth-токенов в базе. Любая длинная случайная строка. */
+  tokenEncKey: process.env.TOKEN_ENC_KEY ?? '',
 };
+
+/** Публичный адрес приложения без хвостового слэша; пусто, если домен не настроен. */
+export function publicBaseUrl(): string {
+  const base = config.webAppUrl || (config.publicDomain ? `https://${config.publicDomain}` : '');
+  return base.replace(/\/+$/, '');
+}
 
 export function assertBotToken(): void {
   if (!config.botToken) {

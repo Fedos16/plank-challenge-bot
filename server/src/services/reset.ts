@@ -12,6 +12,7 @@ const ORPHAN_USER: Prisma.UserWhereInput = {
   weights: { none: {} },
   measurements: { none: {} },
   workouts: { none: {} },
+  integrations: { none: {} },
   bodyProfile: { is: null },
   scaleProfiles: { none: {} },
   personalChallenges: { none: {} },

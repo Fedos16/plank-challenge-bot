@@ -8,6 +8,9 @@ import { adminRoutes } from './adminRoutes';
 import { adminChallengesRoutes } from './adminChallengesRoutes';
 import { fitnessRoutes } from './fitnessRoutes';
 import { ingestRoutes } from './ingestRoutes';
+import { integrationRoutes } from './integrationRoutes';
+import { oauthRoutes } from './oauthRoutes';
+import { webhookRoutes } from './webhookRoutes';
 
 export function resolveWebDist(): string {
   return process.env.WEB_DIST ?? path.resolve(__dirname, '../../../web/dist');
@@ -38,8 +41,12 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminRoutes, { prefix: '/api/admin' });
   // Челленджи по :id — всё, чего может быть несколько (планка одна и живёт в adminRoutes)
   await app.register(adminChallengesRoutes, { prefix: '/api/admin/challenges' });
+  await app.register(integrationRoutes, { prefix: '/api' });
   // Данные с умных весов: приходят с телефона по личному токену, без initData Telegram
   await app.register(ingestRoutes, { prefix: '/api/ingest' });
+  // Возврат из OAuth (браузер, доверяем подписанному state) и вебхуки провайдеров (подпись тела)
+  await app.register(oauthRoutes, { prefix: '/api/oauth' });
+  await app.register(webhookRoutes, { prefix: '/api/webhooks' });
 
   const webDist = resolveWebDist();
   if (fs.existsSync(webDist)) {

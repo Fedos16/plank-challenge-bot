@@ -14,6 +14,7 @@ import type {
   FitnessOverview,
   FreezeOverview,
   GoalInput,
+  IntegrationsResponse,
   LeaderboardRow,
   LedgerEntry,
   ManualWeightInput,
@@ -145,6 +146,11 @@ export const api = {
   addWorkout: (data: WorkoutInput) =>
     request<{ ok: boolean; id: number }>('/workouts', { method: 'POST', body: JSON.stringify(data) }),
   deleteWorkout: (id: number) => request<{ ok: boolean }>(`/workouts/${id}`, { method: 'DELETE' }),
+
+  // --- подключения источников тренировок ---
+  getIntegrations: () => request<IntegrationsResponse>('/integrations'),
+  connectWhoop: () => request<{ url: string }>('/integrations/whoop/connect', { method: 'POST' }),
+  disconnectWhoop: () => request<{ ok: boolean }>('/integrations/whoop', { method: 'DELETE' }),
 
   // --- админка фитнеса: недели, жизни, модерация ---
   adminFitnessWeeks: (id: number) =>
