@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { userRoutes } from './userRoutes';
 import { adminRoutes } from './adminRoutes';
+import { ingestRoutes } from './ingestRoutes';
 
 export function resolveWebDist(): string {
   return process.env.WEB_DIST ?? path.resolve(__dirname, '../../../web/dist');
@@ -32,6 +33,8 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   await app.register(userRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api/admin' });
+  // Данные с умных весов: приходят с телефона по личному токену, без initData Telegram
+  await app.register(ingestRoutes, { prefix: '/api/ingest' });
 
   const webDist = resolveWebDist();
   if (fs.existsSync(webDist)) {

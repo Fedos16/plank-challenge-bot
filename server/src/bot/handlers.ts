@@ -7,7 +7,7 @@ import { dayjs, yesterdayDay } from '../lib/time';
 import { getActiveChallenge } from '../services/challenge';
 import {
   displayName,
-  ensureParticipation,
+  getActiveParticipation,
   getParticipationByTelegramId,
   upsertUser,
 } from '../services/users';
@@ -62,16 +62,18 @@ export function registerHandlers(): void {
     });
 
     const challenge = await getActiveChallenge();
-    if (challenge) {
-      await ensureParticipation(challenge.id, user.id);
-    }
+    const participation = challenge
+      ? await getActiveParticipation(challenge.id, user.id)
+      : null;
 
     const text = [
       `Привет, ${escapeHtml(displayName(user))}! 👋`,
       '',
-      challenge
-        ? `Ты участвуешь в челлендже «${escapeHtml(challenge.title)}».`
-        : 'Сейчас нет активного челленджа.',
+      !challenge
+        ? 'Сейчас нет активного челленджа.'
+        : participation
+          ? `Ты участвуешь в челлендже «${escapeHtml(challenge.title)}».`
+          : `Идёт челлендж «${escapeHtml(challenge.title)}». Чтобы присоединиться, открой приложение и нажми «Участвовать»: пока не вступишь, кружки не считаются — но и штрафов нет.`,
       '',
       'Как это работает:',
       `• Каждый день делай планку и присылай кружочек в общий чат (минимум ${challenge?.minDurationSec ?? 60} сек).`,

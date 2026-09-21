@@ -1,5 +1,6 @@
 export interface ChallengePublic {
   id: number;
+  kind: string;
   title: string;
   description: string;
   rulesText: string;
@@ -26,20 +27,39 @@ export type DayState =
   | 'missed'
   | 'pending';
 
+export interface WeightSummary {
+  latestKg: number | null;
+  day: string | null;
+  weekDelta: number | null;
+  count: number;
+}
+
 export interface MyChallenge {
   id: number;
   key: string;
+  /** plank — планка со штрафами, weight — группа взвешиваний */
+  kind: string;
   title: string;
   description: string;
   dayNumber: number;
-  todayState: DayState;
-  currentStreak: number;
-  bank: number;
+  todayState?: DayState;
+  currentStreak?: number;
+  bank?: number;
+  weight?: WeightSummary;
+}
+
+export interface AvailableChallenge {
+  id: number;
+  key: string;
+  kind: string;
+  title: string;
+  description: string;
 }
 
 export interface MyChallengesResponse {
   user: { name: string; username: string | null; photoUrl: string | null; isAdmin: boolean };
   challenges: MyChallenge[];
+  available: AvailableChallenge[];
 }
 
 export interface SickResult {
@@ -258,4 +278,35 @@ export interface NotificationSetting {
 export interface NotificationSettings {
   slots: string[];
   settings: NotificationSetting[];
+}
+
+export interface WeightPoint {
+  id: number;
+  measuredAt: string;
+  day: string;
+  weightKg: number;
+  bodyFat: number | null;
+  water: number | null;
+  muscle: number | null;
+}
+
+export interface ScaleProfile {
+  id: number;
+  scaleUserId: number;
+  scaleUsername: string | null;
+  targetUserId: number;
+  targetName: string;
+  entries: number;
+  lastWeightKg: number | null;
+  lastSeenAt: string;
+}
+
+export interface WeightOverview {
+  connection: { webhookUrl: string; token: string; configured: boolean };
+  latest: WeightPoint | null;
+  deltas: { week: number | null; month: number | null; total: number | null };
+  stats: { count: number; min: number | null; max: number | null; firstDay: string | null };
+  history: WeightPoint[];
+  profiles: ScaleProfile[];
+  candidates: { userId: number; name: string }[];
 }

@@ -3,7 +3,7 @@ import type { Challenge, Participation, User } from '@prisma/client';
 import { validateInitData, type TelegramWebAppUser } from '../lib/telegramAuth';
 import { config } from '../lib/config';
 import { getActiveChallenge } from '../services/challenge';
-import { ensureParticipation, upsertUser, userFromWebApp } from '../services/users';
+import { getActiveParticipation, upsertUser, userFromWebApp } from '../services/users';
 
 export interface RequestCtx {
   user: User;
@@ -48,7 +48,9 @@ export async function authPreHandler(req: FastifyRequest, reply: FastifyReply): 
 
   const user = await upsertUser(userFromWebApp(tgUser));
   const challenge = await getActiveChallenge();
-  const participation = challenge ? await ensureParticipation(challenge.id, user.id) : null;
+  // В челлендж вступают кнопкой «Участвовать»: открыть приложение — ещё не значит
+  // подписаться на планку со штрафами.
+  const participation = challenge ? await getActiveParticipation(challenge.id, user.id) : null;
 
   req.ctx = { user, challenge, participation };
 }

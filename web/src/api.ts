@@ -15,6 +15,7 @@ import type {
   Quote,
   RecentDaysResponse,
   SickResult,
+  WeightOverview,
 } from './types';
 
 const DEV_ID = import.meta.env.VITE_DEV_TELEGRAM_ID as string | undefined;
@@ -69,6 +70,12 @@ export const api = {
   getLeaderboard: (id: number) => request<{ rows: LeaderboardRow[] }>(`/challenges/${id}/leaderboard`),
   reportSick: (id: number) => request<SickResult>(`/challenges/${id}/sick`, { method: 'POST' }),
 
+  // вступить в группу взвешиваний / выйти из неё
+  joinChallenge: (id: number) =>
+    request<{ ok: boolean; id: number }>(`/challenges/${id}/join`, { method: 'POST' }),
+  leaveChallenge: (id: number) =>
+    request<{ ok: boolean }>(`/challenges/${id}/leave`, { method: 'POST' }),
+
   // --- заморозки серии (только личный кабинет) ---
   getFreezes: (id: number) => request<FreezeOverview>(`/challenges/${id}/freezes`),
   useFreeze: (id: number, day: string) =>
@@ -88,6 +95,17 @@ export const api = {
     request<{ ok: boolean }>(`/personal/${id}/sets/${setId}`, { method: 'DELETE' }),
   deletePersonal: (id: number) =>
     request<{ ok: boolean }>(`/personal/${id}`, { method: 'DELETE' }),
+
+  // --- вес с умных весов ---
+  getWeight: () => request<WeightOverview>('/weight'),
+  rotateWeightToken: () => request<WeightOverview>('/weight/token', { method: 'POST' }),
+  deleteWeightEntry: (id: number) =>
+    request<{ ok: boolean }>('/weight/' + id, { method: 'DELETE' }),
+  setWeightProfile: (id: number, targetUserId: number | null) =>
+    request<WeightOverview>('/weight/profiles/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({ targetUserId }),
+    }),
 
   // --- админские ---
   getNotifications: (challengeId: number) =>

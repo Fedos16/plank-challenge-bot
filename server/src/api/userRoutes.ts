@@ -19,8 +19,23 @@ import {
   getPersonalDetail,
   listPersonal,
 } from '../services/personal';
-import { getChallengeById } from '../services/challenge';
-import { getActiveParticipation, displayName } from '../services/users';
+import {
+  assignProfile,
+  deleteEntry,
+  getWeightOverview,
+  rotateScaleToken,
+} from '../services/weight';
+import {
+  getChallengeById,
+  isWeightChallenge,
+  listJoinableChallenges,
+} from '../services/challenge';
+import {
+  displayName,
+  ensureParticipation,
+  getActiveParticipation,
+  leaveChallenge,
+} from '../services/users';
 import { reportSick } from '../services/sick';
 import { getFreezeOverview, useFreeze } from '../services/freezes';
 import { challengeDayNumber, dateToDay, todayDay } from '../lib/time';
@@ -30,6 +45,7 @@ function challengePublicDTO(ch: Challenge, bank: number) {
   return {
     id: ch.id,
     key: ch.key,
+    kind: ch.kind,
     title: ch.title,
     description: ch.description,
     rulesText: ch.rulesText,
@@ -73,9 +89,24 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     return { challenge, participation };
   }
 
+  /** То же, но только для челленджей с планкой: кружки, штрафы, серии, больничные. */
+  async function resolvePlank(
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<{ challenge: Challenge; participation: Participation } | null> {
+    const r = await resolve(req, reply);
+    if (!r) return null;
+    if (isWeightChallenge(r.challenge)) {
+      reply.code(400).send({ error: 'not_applicable' });
+      return null;
+    }
+    return r;
+  }
+
   // Список челленджей текущего пользователя + инфо о пользователе (для выбора в профиле)
   app.get('/my/challenges', async (req) => {
     const u = req.ctx!.user;
+    const joinable = await listJoinableChallenges(u.id);
     return {
       user: {
         name: displayName(u),
@@ -84,7 +115,37 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         isAdmin: u.isAdmin,
       },
       challenges: await getMyChallenges(u.id),
+      available: joinable.map((c) => ({
+        id: c.id,
+        key: c.key,
+        kind: c.kind,
+        title: c.title,
+        description: c.description,
+      })),
     };
+  });
+
+  // Вступить в челлендж: участие всегда явное — ни /start, ни вход в приложение
+  // сами в челлендж не записывают.
+  app.post('/challenges/:id/join', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const challenge = await getChallengeById(id);
+    if (!challenge || !challenge.isActive) {
+      return reply.code(404).send({ error: 'challenge_not_found' });
+    }
+    await ensureParticipation(challenge.id, req.ctx!.user.id);
+    return { ok: true, id: challenge.id };
+  });
+
+  app.post('/challenges/:id/leave', async (req, reply) => {
+    const r = await resolve(req, reply);
+    if (!r) return;
+    if (!isWeightChallenge(r.challenge)) {
+      return reply.code(400).send({ error: 'not_applicable' });
+    }
+    await leaveChallenge(r.challenge.id, req.ctx!.user.id);
+    return { ok: true };
   });
 
   // Информация о конкретном челлендже + банк (только для участника)
@@ -96,21 +157,21 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   // Профиль пользователя в конкретном челлендже
   app.get('/challenges/:id/me', async (req, reply) => {
-    const r = await resolve(req, reply);
+    const r = await resolvePlank(req, reply);
     if (!r) return;
     return getProfile(r.challenge, r.participation, req.ctx!.user);
   });
 
   // Рейтинг конкретного челленджа
   app.get('/challenges/:id/leaderboard', async (req, reply) => {
-    const r = await resolve(req, reply);
+    const r = await resolvePlank(req, reply);
     if (!r) return;
     return { rows: await getLeaderboard(r.challenge) };
   });
 
   // Сообщить о болезни на сегодня в конкретном челлендже
   app.post('/challenges/:id/sick', async (req, reply) => {
-    const r = await resolve(req, reply);
+    const r = await resolvePlank(req, reply);
     if (!r) return;
     const result = await reportSick({
       challenge: r.challenge,
@@ -127,13 +188,13 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- Заморозки серии (только сам участник, только в кабинете) ----
   app.get('/challenges/:id/freezes', async (req, reply) => {
-    const r = await resolve(req, reply);
+    const r = await resolvePlank(req, reply);
     if (!r) return;
     return getFreezeOverview(r.challenge, r.participation);
   });
 
   app.post('/challenges/:id/freezes', async (req, reply) => {
-    const r = await resolve(req, reply);
+    const r = await resolvePlank(req, reply);
     if (!r) return;
     const body = (req.body ?? {}) as { day?: string };
     if (!body.day || !/^\d{4}-\d{2}-\d{2}$/.test(body.day)) {
@@ -148,13 +209,13 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- Личные уведомления в ЛС ----
   app.get('/challenges/:id/notifications', async (req, reply) => {
-    const r = await resolve(req, reply);
+    const r = await resolvePlank(req, reply);
     if (!r) return;
     return getNotificationSettings(r.challenge, r.participation.id);
   });
 
   app.patch('/challenges/:id/notifications', async (req, reply) => {
-    const r = await resolve(req, reply);
+    const r = await resolvePlank(req, reply);
     if (!r) return;
     const body = (req.body ?? {}) as {
       type?: string;
@@ -223,6 +284,40 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/personal/:id', async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const ok = await deletePersonal(id, req.ctx!.user.id);
+    if (!ok) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
+  });
+
+  // ---- Вес с умных весов (только владелец) ----
+  app.get('/weight', async (req) => getWeightOverview(req.ctx!.user.id));
+
+  // Перевыпуск токена: старый адрес вебхука сразу перестаёт приниматься
+  app.post('/weight/token', async (req) => {
+    await rotateScaleToken(req.ctx!.user.id);
+    return getWeightOverview(req.ctx!.user.id);
+  });
+
+  // Чей это профиль весов: null — мой, иначе участник общего челленджа.
+  // Вместе с профилем к нему переезжает и уже накопленная история.
+  app.patch('/weight/profiles/:id', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const body = (req.body ?? {}) as { targetUserId?: number | null };
+    const raw = body.targetUserId;
+    const target = raw === null || raw === undefined ? null : Math.trunc(Number(raw));
+    if (target !== null && (!Number.isInteger(target) || target <= 0)) {
+      return reply.code(400).send({ error: 'bad_target' });
+    }
+    const result = await assignProfile(req.ctx!.user.id, id, target);
+    if (!result.ok) return reply.code(400).send({ error: result.error });
+    const overview = await getWeightOverview(req.ctx!.user.id);
+    return { ...overview, moved: result.moved, skipped: result.skipped };
+  });
+
+  app.delete('/weight/:id', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const ok = await deleteEntry(req.ctx!.user.id, id);
     if (!ok) return reply.code(404).send({ error: 'not_found' });
     return { ok: true };
   });

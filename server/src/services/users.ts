@@ -74,6 +74,19 @@ export async function ensureParticipation(
   return prisma.participation.create({ data: { challengeId, userId } });
 }
 
+/** Выйти из челленджа (участие помечается left, история остаётся). */
+export async function leaveChallenge(challengeId: number, userId: number): Promise<boolean> {
+  const p = await prisma.participation.findUnique({
+    where: { challengeId_userId: { challengeId, userId } },
+  });
+  if (!p || p.status !== 'active') return false;
+  await prisma.participation.update({
+    where: { id: p.id },
+    data: { status: 'left', leftAt: new Date() },
+  });
+  return true;
+}
+
 /** Активное участие пользователя в челлендже по userId (или null) */
 export async function getActiveParticipation(
   challengeId: number,

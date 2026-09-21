@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from './api';
-import type { MyChallenge, PersonalSummary } from './types';
+import type { AvailableChallenge, MyChallenge, PersonalSummary } from './types';
 import ChallengeListView from './components/ChallengeListView.vue';
 import ChallengeView from './components/ChallengeView.vue';
 import PersonalChallengeView from './components/PersonalChallengeView.vue';
+import WeightView from './components/WeightView.vue';
 import AdminView from './components/AdminView.vue';
 
 type Tab = 'challenges' | 'admin';
@@ -12,9 +13,10 @@ type Tab = 'challenges' | 'admin';
 const tab = ref<Tab>('challenges');
 const group = ref<MyChallenge[]>([]);
 const personal = ref<PersonalSummary[]>([]);
+const available = ref<AvailableChallenge[]>([]);
 const userName = ref('');
 const isAdmin = ref(false);
-const selected = ref<{ kind: 'group' | 'personal'; id: number } | null>(null);
+const selected = ref<{ kind: 'group' | 'personal' | 'weight'; id: number } | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
@@ -24,11 +26,13 @@ async function load(autoOpen = false) {
     const [my, pers] = await Promise.all([api.getMyChallenges(), api.getPersonal()]);
     group.value = my.challenges;
     personal.value = pers.challenges;
+    available.value = my.available;
     userName.value = my.user.name;
     isAdmin.value = my.user.isAdmin;
     if (autoOpen && group.value.length + personal.value.length === 1) {
-      selected.value = group.value.length === 1
-        ? { kind: 'group', id: group.value[0]!.id }
+      const only = group.value[0];
+      selected.value = only
+        ? { kind: only.kind === 'weight' ? 'weight' : 'group', id: only.id }
         : { kind: 'personal', id: personal.value[0]!.id };
     }
   } catch (e) {
@@ -47,6 +51,16 @@ async function createPersonal(title: string) {
     const r = await api.createPersonal(title);
     await load();
     selected.value = { kind: 'personal', id: r.id };
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Ошибка';
+  }
+}
+/** Вступление в группу взвешиваний — сразу открываем её. */
+async function joinChallenge(id: number) {
+  try {
+    await api.joinChallenge(id);
+    await load();
+    selected.value = { kind: 'weight', id };
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Ошибка';
   }
@@ -79,6 +93,12 @@ onMounted(() => load(true));
           @back="backToList"
           @deleted="backToList"
         />
+        <WeightView
+          v-else-if="selected?.kind === 'weight'"
+          :challenge-id="selected.id"
+          @back="backToList"
+          @left="backToList"
+        />
         <ChallengeView
           v-else-if="selected?.kind === 'group'"
           :challenge-id="selected.id"
@@ -89,9 +109,12 @@ onMounted(() => load(true));
           v-else
           :group="group"
           :personal="personal"
+          :available="available"
           :user-name="userName"
           @open-group="(id: number) => (selected = { kind: 'group', id })"
+          @open-weight="(id: number) => (selected = { kind: 'weight', id })"
           @open-personal="(id: number) => (selected = { kind: 'personal', id })"
+          @join="joinChallenge"
           @create="createPersonal"
         />
       </template>

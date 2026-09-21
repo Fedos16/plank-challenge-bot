@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import type { MyChallenge, PersonalSummary } from '../types';
+import type { AvailableChallenge, DayState, MyChallenge, PersonalSummary } from '../types';
 import { STATE_LABEL, formatMoney } from '../helpers';
 
-defineProps<{ group: MyChallenge[]; personal: PersonalSummary[]; userName: string }>();
+defineProps<{
+  group: MyChallenge[];
+  personal: PersonalSummary[];
+  available: AvailableChallenge[];
+  userName: string;
+}>();
 const emit = defineEmits<{
   (e: 'open-group', id: number): void;
+  (e: 'open-weight', id: number): void;
   (e: 'open-personal', id: number): void;
   (e: 'create', title: string): void;
+  (e: 'join', id: number): void;
 }>();
 
 const newTitle = ref('');
@@ -17,31 +24,59 @@ function create() {
   emit('create', t);
   newTitle.value = '';
 }
+
+/** В группе взвешиваний состояния дня нет — карточка рисуется по-другому. */
+function dayState(c: MyChallenge): DayState {
+  return c.todayState ?? 'pending';
+}
+
+function formatKg(n: number): string {
+  return n.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+function weekDelta(c: MyChallenge): string {
+  const d = c.weight?.weekDelta;
+  if (d === null || d === undefined) return '';
+  if (d === 0) return '±0 за неделю';
+  return (d > 0 ? '+' : '−') + formatKg(Math.abs(d)) + ' кг за неделю';
+}
 </script>
 
 <template>
   <div>
     <h2 style="margin: 4px 0 14px">Мои челленджи</h2>
 
-    <!-- Групповые -->
-    <div
-      v-for="c in group"
-      :key="'g' + c.id"
-      class="card challenge-card"
-      @click="$emit('open-group', c.id)"
-    >
-      <div class="challenge-card-head">
-        <div class="challenge-title">{{ c.title }}</div>
-        <span :class="`badge ${c.todayState}`">{{ STATE_LABEL[c.todayState] }}</span>
+    <template v-for="c in group" :key="'g' + c.id">
+      <!-- Группа взвешиваний: ни серий, ни банка — вес и динамика -->
+      <div v-if="c.kind === 'weight'" class="card challenge-card" @click="$emit('open-weight', c.id)">
+        <div class="challenge-card-head">
+          <div class="challenge-title">⚖️ {{ c.title }}</div>
+          <span v-if="c.weight?.latestKg" class="fire">{{ formatKg(c.weight.latestKg) }} кг</span>
+        </div>
+        <div class="muted">{{ c.description }}</div>
+        <div class="challenge-card-meta">
+          <span v-if="c.weight?.count">{{ c.weight.count }} взвешиваний</span>
+          <span v-else>Весы ещё не подключены</span>
+          <span v-if="weekDelta(c)">{{ weekDelta(c) }}</span>
+          <span class="chev">›</span>
+        </div>
       </div>
-      <div class="muted">{{ c.description }}</div>
-      <div class="challenge-card-meta">
-        <span>День {{ c.dayNumber }}</span>
-        <span class="fire">🔥 {{ c.currentStreak }}</span>
-        <span>💰 {{ formatMoney(c.bank) }}</span>
-        <span class="chev">›</span>
+
+      <!-- Планка: состояние дня, серия, банк -->
+      <div v-else class="card challenge-card" @click="$emit('open-group', c.id)">
+        <div class="challenge-card-head">
+          <div class="challenge-title">{{ c.title }}</div>
+          <span :class="'badge ' + dayState(c)">{{ STATE_LABEL[dayState(c)] }}</span>
+        </div>
+        <div class="muted">{{ c.description }}</div>
+        <div class="challenge-card-meta">
+          <span>День {{ c.dayNumber }}</span>
+          <span class="fire">🔥 {{ c.currentStreak ?? 0 }}</span>
+          <span>💰 {{ formatMoney(c.bank ?? 0) }}</span>
+          <span class="chev">›</span>
+        </div>
       </div>
-    </div>
+    </template>
 
     <!-- Личные -->
     <h3 v-if="personal.length" style="margin: 18px 0 8px">Личные</h3>
@@ -61,6 +96,18 @@ function create() {
         <span class="chev">›</span>
       </div>
     </div>
+
+    <!-- Куда можно вступить -->
+    <template v-if="available.length">
+      <h3 style="margin: 18px 0 8px">Ещё доступно</h3>
+      <div v-for="c in available" :key="'a' + c.id" class="card">
+        <div class="challenge-card-head">
+          <div class="challenge-title">{{ c.kind === 'weight' ? '⚖️ ' : '' }}{{ c.title }}</div>
+        </div>
+        <div class="muted">{{ c.description }}</div>
+        <button class="btn" style="margin-top: 10px" @click="$emit('join', c.id)">Участвовать</button>
+      </div>
+    </template>
 
     <!-- Создать личный -->
     <div class="card">

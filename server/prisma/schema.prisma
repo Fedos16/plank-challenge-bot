@@ -17,15 +17,22 @@ model User {
   photoUrl   String?
   isAdmin    Boolean  @default(false)
   createdAt  DateTime @default(now())
+  /// Секрет для вебхука умных весов (openScale sync). null — весы не подключены.
+  scaleToken String?  @unique
 
   participations     Participation[]
   personalChallenges PersonalChallenge[]
+  weights            WeightEntry[]
+  scaleProfiles      ScaleProfile[]      @relation("ScaleProfileOwner")
+  scaleProfilesTaken ScaleProfile[]      @relation("ScaleProfileTarget")
 }
 
 // Челлендж (например «Планка каждый день»). Все настройки редактируются в админке.
 model Challenge {
   id                 Int      @id @default(autoincrement())
   key                String   @unique
+  /// plank — ежедневная планка с кружками и штрафами; weight — группа для взвешиваний
+  kind               String   @default("plank")
   title              String
   description        String   @default("")
   rulesText          String   @default("")
@@ -196,6 +203,49 @@ model WorkoutSet {
   challenge PersonalChallenge @relation(fields: [personalChallengeId], references: [id], onDelete: Cascade)
 
   @@index([personalChallengeId, day])
+}
+
+// Взвешивание на умных весах. Прилетает вебхуком из openScale sync (Android),
+// который слушает весы по Bluetooth. Данные личные: видит только сам пользователь.
+model WeightEntry {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  measuredAt    DateTime // момент взвешивания (приходит от весов)
+  day           DateTime @db.Date // день в TZ приложения
+  weightKg      Float
+  bodyFat       Float? // % жира
+  water         Float? // % воды
+  muscle        Float? // % мышц
+  scaleEntryId  Int? // id записи в openScale (чтобы поймать правку уже отправленного измерения)
+  scaleUserId   Int? // id пользователя в openScale (на одном телефоне их может быть несколько)
+  scaleUsername String?
+  sourceOwnerId Int? // чей телефон прислал запись (владелец токена), null — ручной источник
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, measuredAt])
+  @@index([userId, day])
+  @@index([sourceOwnerId, scaleUserId])
+}
+
+// Пользователь весов (профиль в openScale на телефоне владельца токена). Когда на одни
+// весы встаёт вся семья, openScale раскладывает взвешивания по своим профилям, а владелец
+// в кабинете указывает, кому из участников какой профиль принадлежит.
+model ScaleProfile {
+  id            Int      @id @default(autoincrement())
+  ownerId       Int // чей телефон (владелец токена вебхука)
+  scaleUserId   Int // id пользователя внутри openScale
+  scaleUsername String? // как профиль назван в openScale — чтобы узнать его в кабинете
+  targetUserId  Int? // кому писать взвешивания; null — самому владельцу
+  lastSeenAt    DateTime @default(now()) // когда с этого профиля приходило последнее измерение
+  createdAt     DateTime @default(now())
+
+  owner  User  @relation("ScaleProfileOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  target User? @relation("ScaleProfileTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@unique([ownerId, scaleUserId])
 }
 
 // Лог отправленных дневных отчётов (идемпотентность)
