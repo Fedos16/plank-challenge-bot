@@ -112,6 +112,10 @@ export function hearts(left: number, total: number): string {
 }
 
 const ERROR_TEXT: Record<string, string> = {
+  off_rate_limited: 'Слишком много запросов к Open Food Facts — попробуйте через минуту',
+  off_unavailable: 'Open Food Facts сейчас недоступен — введите калории цифрой или добавьте свой продукт',
+  off_disabled: 'Поиск в Open Food Facts выключен',
+  bad_query: 'Запрос — от 3 символов',
   bad_food_day: 'Дата не может быть в будущем',
   bad_meal: 'Выберите приём пищи',
   bad_grams: 'Граммы — от 1 до 5000',

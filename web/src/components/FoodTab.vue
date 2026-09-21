@@ -51,6 +51,7 @@ let searchSeq = 0;
 
 watch(query, (q) => {
   if (searchTimer) clearTimeout(searchTimer);
+  offNote.value = null;
   if (q.trim().length < 2) {
     results.value = [];
     return;
@@ -65,6 +66,27 @@ watch(query, (q) => {
     }
   }, 250);
 });
+
+// --- внешняя база упакованных продуктов: только по кнопке, у сервиса жёсткий лимит запросов ---
+const offBusy = ref(false);
+const offNote = ref<string | null>(null);
+
+async function searchOff() {
+  const q = query.value.trim();
+  if (q.length < 3 || offBusy.value) return;
+  offBusy.value = true;
+  offNote.value = null;
+  try {
+    const found = (await api.searchFoodOff(q)).products;
+    const known = new Set(results.value.map((p) => p.id));
+    results.value = [...results.value, ...found.filter((p) => !known.has(p.id))];
+    offNote.value = found.length ? null : 'В Open Food Facts тоже не нашлось — добавьте свой продукт.';
+  } catch (e) {
+    offNote.value = errorText(e);
+  } finally {
+    offBusy.value = false;
+  }
+}
 
 const kcalForm = reactive({ kcal: '', title: '' });
 const customForm = reactive({ name: '', kcal100: '', protein100: '', fat100: '', carbs100: '' });
@@ -290,12 +312,26 @@ onMounted(async () => {
             <button v-for="p in recent" :key="p.id" type="button" @click="pick(p)">{{ p.name }}</button>
           </div>
           <div v-for="p in results" :key="p.id" class="result" @click="pick(p)">
-            <div class="name">{{ p.name }}</div>
+            <div class="name">
+              {{ p.name }}
+              <span v-if="p.brand" class="muted">· {{ p.brand }}</span>
+            </div>
             <div class="meta">{{ kcal(p.kcal100) }} ккал / 100 г</div>
           </div>
           <div v-if="query.trim().length >= 2 && !results.length" class="muted" style="margin-top: 10px">
-            Не нашлось. Введите калории цифрой или добавьте свой продукт — он останется в справочнике.
+            В справочнике не нашлось. Поищите среди упакованных продуктов, введите калории цифрой
+            или добавьте свой продукт.
           </div>
+          <button
+            v-if="query.trim().length >= 3"
+            class="btn small secondary"
+            style="margin-top: 10px"
+            :disabled="offBusy"
+            @click="searchOff"
+          >
+            {{ offBusy ? 'Ищем…' : '🌍 Искать в Open Food Facts' }}
+          </button>
+          <div v-if="offNote" class="muted" style="margin-top: 8px">{{ offNote }}</div>
         </template>
 
         <template v-else>

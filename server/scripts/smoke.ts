@@ -5,6 +5,7 @@ const HEADERS = { 'X-Dev-Telegram-Id': '999', 'Content-Type': 'application/json'
 
 const BASE = 'http://127.0.0.1:3001';
 const WHOOP_STUB_PORT = 3002;
+const OFF_STUB_PORT = 3003;
 const WHOOP_SECRET = 'smoke-whoop-secret';
 
 // Конфиг читает env при загрузке модуля, поэтому переменные задаются до импорта сервера
@@ -15,6 +16,7 @@ Object.assign(process.env, {
   WHOOP_CLIENT_SECRET: WHOOP_SECRET,
   WHOOP_API_BASE: `http://127.0.0.1:${WHOOP_STUB_PORT}`,
   TOKEN_ENC_KEY: 'smoke-token-enc-key',
+  OFF_API_BASE: `http://127.0.0.1:${OFF_STUB_PORT}`,
 });
 
 async function jget(url: string) {
@@ -988,8 +990,72 @@ async function foodScenario(base: string) {
 
     const yesterday = await add({ kcal: 300, day: mskDay(-1) });
     expect('запись задним числом попадает в свой день', [yesterday.body.day, yesterday.body.eaten.kcal], [mskDay(-1), 300]);
+
+    await openFoodFactsChecks(base, search);
   } finally {
     await clean();
+  }
+}
+
+/** Open Food Facts через локальную заглушку: кэш в справочнике, лимит запросов, недоступность. */
+async function openFoodFactsChecks(base: string, search: (q: string) => Promise<any[]>) {
+  const { prisma } = await import('../src/lib/prisma');
+  await prisma.foodProduct.deleteMany({ where: { source: 'off' } });
+
+  const stub = { calls: 0, userAgent: '', down: false };
+  const server: Server = createServer((req, res) => {
+    stub.calls += 1;
+    stub.userAgent = String(req.headers['user-agent'] ?? '');
+    if (stub.down) {
+      res.writeHead(503);
+      return res.end('maintenance');
+    }
+    const terms = new URL(req.url ?? '/', 'http://stub').searchParams.get('search_terms') ?? '';
+    const products = [
+      { code: '4600000000017', product_name_ru: `Батончик ${terms}`, brands: 'Smoke Foods, Другой', serving_quantity: 45,
+        nutriments: { 'energy-kcal_100g': 412, proteins_100g: 21, fat_100g: 14, carbohydrates_100g: 48 } },
+      { code: '4600000000024', product_name: 'Без калорий', nutriments: {} }, // бесполезная запись — отбрасывается
+    ];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ count: products.length, products }));
+  });
+  await new Promise<void>((resolve) => server.listen(OFF_STUB_PORT, '127.0.0.1', () => resolve()));
+
+  try {
+    const off = (q: string) => call('GET', `${base}/api/food/search/off?q=${encodeURIComponent(q)}`);
+
+    expect('локально такого батончика нет', (await search('батончик протеиновый smoke')).length, 0);
+    const found = await off('Протеиновый SMOKE');
+    expect(
+      'найден во внешней базе',
+      [found.status, found.body.products.length, found.body.products[0].name, found.body.products[0].brand, found.body.products[0].kcal100],
+      [200, 1, 'Батончик протеиновый smoke', 'Smoke Foods', 412],
+    );
+    expect('представились внятным User-Agent', stub.userAgent.includes('SportChallengeBot'), true);
+    expect('найденное осело в справочнике — теперь находит локальный поиск, и по бренду тоже', (await search('smoke foods')).length, 1);
+
+    const callsBefore = stub.calls;
+    await off('протеиновый smoke');
+    expect('одинаковый запрос второй раз наружу не уходит', stub.calls, callsBefore);
+    expect('слишком короткий запрос -> 400', (await off('йо')).status, 400);
+
+    // запись в дневник по продукту из внешней базы
+    const { randomUUID } = await import('node:crypto');
+    const entry = await call('POST', `${base}/api/food/entries`, { clientId: randomUUID(), productId: found.body.products[0].id, grams: 45 });
+    expect('батончик 45 г', entry.body.entries.find((e: any) => e.title.startsWith('Батончик')).kcal, 185);
+
+    stub.down = true;
+    const down = await off('недоступный сервис');
+    expect('внешняя база лежит -> 502, дневник жив', [down.status, down.body?.error, (await jget(`${base}/api/food/day`)).day], [502, 'off_unavailable', mskDay(0)]);
+    stub.down = false;
+
+    // лимит: сервис просит не больше 10 поисков в минуту с адреса, наш порог — 8
+    const statuses: number[] = [];
+    for (let i = 0; i < 9; i++) statuses.push((await off(`уникальный запрос номер ${i}`)).status);
+    expect('лимит запросов в минуту', [statuses.filter((s) => s === 200).length < 9, statuses.at(-1)], [true, 429]);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await prisma.foodProduct.deleteMany({ where: { source: 'off' } });
   }
 }
 

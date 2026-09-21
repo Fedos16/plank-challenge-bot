@@ -159,6 +159,8 @@ export const api = {
     request<FoodDay>('/food/entries', { method: 'POST', body: JSON.stringify(data) }),
   deleteFoodEntry: (id: number) => request<{ ok: boolean }>(`/food/entries/${id}`, { method: 'DELETE' }),
   searchFood: (q: string) => request<{ products: FoodProduct[] }>(`/food/search?q=${encodeURIComponent(q)}`),
+  searchFoodOff: (q: string) =>
+    request<{ products: FoodProduct[] }>(`/food/search/off?q=${encodeURIComponent(q)}`),
   getRecentFood: () => request<{ products: FoodProduct[] }>('/food/recent'),
   createFoodProduct: (data: FoodProductInput) =>
     request<FoodProduct>('/food/products', { method: 'POST', body: JSON.stringify(data) }),
