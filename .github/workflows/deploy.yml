@@ -22,6 +22,11 @@ jobs:
           cd /opt/challenge
           git fetch --quiet origin main
           git reset --hard origin/main
-          docker compose up -d --build
+          docker compose build app
+          # Схему накатываем отдельным шагом ДО подмены контейнера. Если db push откажется
+          # (например, уникальный индекс на колонку существующей таблицы), деплой упадёт
+          # здесь, а старый контейнер продолжит работать — без рестарт-цикла на проде.
+          docker compose run --rm app npx prisma db push --skip-generate
+          docker compose up -d
           docker image prune -f
           docker compose ps

@@ -63,7 +63,7 @@ function weekDelta(c: MyChallenge): string {
       </div>
 
       <!-- Планка: состояние дня, серия, банк -->
-      <div v-else class="card challenge-card" @click="$emit('open-group', c.id)">
+      <div v-else-if="c.kind === 'plank'" class="card challenge-card" @click="$emit('open-group', c.id)">
         <div class="challenge-card-head">
           <div class="challenge-title">{{ c.title }}</div>
           <span :class="'badge ' + dayState(c)">{{ STATE_LABEL[dayState(c)] }}</span>

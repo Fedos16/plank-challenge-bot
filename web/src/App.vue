@@ -16,9 +16,23 @@ const personal = ref<PersonalSummary[]>([]);
 const available = ref<AvailableChallenge[]>([]);
 const userName = ref('');
 const isAdmin = ref(false);
-const selected = ref<{ kind: 'group' | 'personal' | 'weight'; id: number } | null>(null);
+type Screen = 'group' | 'personal' | 'weight';
+
+const selected = ref<{ kind: Screen; id: number } | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
+
+/** Экран группового челленджа по его типу. Неизвестный тип остаётся в списке, а не открывается как планка. */
+function screenFor(kind: string): Screen | null {
+  if (kind === 'plank') return 'group';
+  if (kind === 'weight') return 'weight';
+  return null;
+}
+
+function openGroup(id: number, kind: string) {
+  const screen = screenFor(kind);
+  selected.value = screen ? { kind: screen, id } : null;
+}
 
 async function load(autoOpen = false) {
   try {
@@ -31,9 +45,8 @@ async function load(autoOpen = false) {
     isAdmin.value = my.user.isAdmin;
     if (autoOpen && group.value.length + personal.value.length === 1) {
       const only = group.value[0];
-      selected.value = only
-        ? { kind: only.kind === 'weight' ? 'weight' : 'group', id: only.id }
-        : { kind: 'personal', id: personal.value[0]!.id };
+      if (only) openGroup(only.id, only.kind);
+      else selected.value = { kind: 'personal', id: personal.value[0]!.id };
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Ошибка загрузки';
@@ -55,12 +68,13 @@ async function createPersonal(title: string) {
     error.value = e instanceof Error ? e.message : 'Ошибка';
   }
 }
-/** Вступление в группу взвешиваний — сразу открываем её. */
+/** После вступления сразу открываем челлендж — на экране его типа. */
 async function joinChallenge(id: number) {
   try {
+    const kind = available.value.find((c) => c.id === id)?.kind;
     await api.joinChallenge(id);
     await load();
-    selected.value = { kind: 'weight', id };
+    if (kind) openGroup(id, kind);
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Ошибка';
   }

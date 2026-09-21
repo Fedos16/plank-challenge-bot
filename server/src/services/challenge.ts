@@ -1,12 +1,33 @@
 import type { Challenge } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 
-/** Механика челленджа: ежедневная планка со штрафами либо группа для взвешиваний. */
-export const CHALLENGE_KINDS = ['plank', 'weight'] as const;
+/**
+ * Механика челленджа: ежедневная планка со штрафами, группа для взвешиваний либо фитнес
+ * с недельной нормой тренировок и жизнями.
+ */
+export const CHALLENGE_KINDS = ['plank', 'weight', 'fitness'] as const;
 export type ChallengeKind = (typeof CHALLENGE_KINDS)[number];
 
-export function isWeightChallenge(ch: Challenge): boolean {
-  return ch.kind === 'weight';
+/**
+ * Что умеет челлендж каждого типа. Роуты спрашивают возможность, а не тип: иначе каждая
+ * новая механика молча наследует планочные больничные, штрафы и заморозки.
+ */
+export type Capability =
+  | 'dailyCheckin' // кружки, дедлайны, серии, больничные, заморозки, напоминания
+  | 'bank' // штрафы и общий банк
+  | 'weeklyWorkouts' // недельная норма тренировок и жизни
+  | 'goals' // личная цель и стартовые замеры
+  | 'leave'; // участник может выйти сам (из планки убирает только админ)
+
+const CAPABILITIES: Record<ChallengeKind, readonly Capability[]> = {
+  plank: ['dailyCheckin', 'bank'],
+  weight: ['leave'],
+  fitness: ['weeklyWorkouts', 'goals', 'leave'],
+};
+
+export function can(ch: Challenge, cap: Capability): boolean {
+  const caps: readonly Capability[] | undefined = CAPABILITIES[ch.kind as ChallengeKind];
+  return caps?.includes(cap) ?? false;
 }
 
 /**
@@ -29,6 +50,14 @@ export async function getActiveChallengeOrThrow(): Promise<Challenge> {
 
 export async function getChallengeById(id: number): Promise<Challenge | null> {
   return prisma.challenge.findUnique({ where: { id } });
+}
+
+/** Все активные челленджи одного типа: в отличие от планки, фитнес-челленджей может быть несколько. */
+export async function listActiveChallengesByKind(kind: ChallengeKind): Promise<Challenge[]> {
+  return prisma.challenge.findMany({
+    where: { isActive: true, kind },
+    orderBy: { createdAt: 'asc' },
+  });
 }
 
 /** Активные челленджи, в которых пользователь ещё не состоит: их он может выбрать сам. */

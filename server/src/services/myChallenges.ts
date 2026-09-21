@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma';
 import { challengeDayNumber, dateToDay, todayDay } from '../lib/time';
 import { getBank } from './bank';
+import { can } from './challenge';
 import { getParticipantDayState, type DayState } from './dayStatus';
 import { getParticipationStreaks } from './streaks';
 import { getWeightSummary, type WeightSummary } from './weight';
@@ -44,6 +45,12 @@ export async function getMyChallenges(userId: number): Promise<MyChallengeSummar
     // В группе взвешиваний нет ни дней, ни серий, ни банка — только свой вес
     if (ch.kind === 'weight') {
       result.push({ ...base, weight: await getWeightSummary(userId) });
+      continue;
+    }
+
+    // Серии, состояние дня и банк есть только у планки
+    if (!can(ch, 'dailyCheckin')) {
+      result.push(base);
       continue;
     }
 

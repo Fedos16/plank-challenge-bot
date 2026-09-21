@@ -1,4 +1,17 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
+
+/**
+ * Кого можно удалить после сброса челленджа: только тех, у кого не осталось вообще ничего.
+ * Личные данные (вес, профили весов, личные челленджи) привязаны к пользователю, а не
+ * к участию, и каскадом ушли бы вместе с ним — сброс планки не должен их задевать.
+ */
+const ORPHAN_USER: Prisma.UserWhereInput = {
+  participations: { none: {} },
+  weights: { none: {} },
+  scaleProfiles: { none: {} },
+  personalChallenges: { none: {} },
+};
 
 /** Очистить штрафы и банк челленджа (все записи реестра). */
 export async function resetLedger(challengeId: number): Promise<number> {
@@ -14,8 +27,7 @@ export async function resetParticipants(challengeId: number): Promise<number> {
     await tx.sickDay.deleteMany({ where: { challengeId } });
     await tx.streakFreeze.deleteMany({ where: { challengeId } });
     const r = await tx.participation.deleteMany({ where: { challengeId } });
-    // удаляем пользователей, не оставшихся ни в одном челлендже
-    await tx.user.deleteMany({ where: { participations: { none: {} } } });
+    await tx.user.deleteMany({ where: ORPHAN_USER });
     return r.count;
   });
 }
@@ -37,6 +49,6 @@ export async function resetAllData(challengeId: number): Promise<void> {
     await tx.streakFreeze.deleteMany({ where: { challengeId } });
     await tx.dailyReport.deleteMany({ where: { challengeId } });
     await tx.participation.deleteMany({ where: { challengeId } });
-    await tx.user.deleteMany({ where: { participations: { none: {} } } });
+    await tx.user.deleteMany({ where: ORPHAN_USER });
   });
 }

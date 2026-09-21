@@ -150,7 +150,8 @@ async function main() {
 
   const foreign = await fetch(`${base}/api/ingest/openscale`, {
     method: 'POST',
-    headers: { Authorization: 'Bearer нет-такого-токена', 'Content-Type': 'application/json' },
+    // только ASCII: fetch в Node отвергает кириллицу в значении заголовка ещё до отправки
+    headers: { Authorization: 'Bearer no-such-token', 'Content-Type': 'application/json' },
     body: JSON.stringify({ event: 'test' }),
   });
   console.log('scale: чужой токен ->', foreign.status, '(ожидаем 401)');

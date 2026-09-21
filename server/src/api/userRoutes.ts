@@ -26,9 +26,10 @@ import {
   rotateScaleToken,
 } from '../services/weight';
 import {
+  can,
   getChallengeById,
-  isWeightChallenge,
   listJoinableChallenges,
+  type Capability,
 } from '../services/challenge';
 import {
   displayName,
@@ -89,19 +90,24 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     return { challenge, participation };
   }
 
-  /** То же, но только для челленджей с планкой: кружки, штрафы, серии, больничные. */
-  async function resolvePlank(
+  /** То же, но только для челленджей, которые умеют `cap`: остальным — 400 not_applicable. */
+  async function resolveWith(
+    cap: Capability,
     req: FastifyRequest,
     reply: FastifyReply,
   ): Promise<{ challenge: Challenge; participation: Participation } | null> {
     const r = await resolve(req, reply);
     if (!r) return null;
-    if (isWeightChallenge(r.challenge)) {
+    if (!can(r.challenge, cap)) {
       reply.code(400).send({ error: 'not_applicable' });
       return null;
     }
     return r;
   }
+
+  /** Только для челленджей с планкой: кружки, штрафы, серии, больничные. */
+  const resolvePlank = (req: FastifyRequest, reply: FastifyReply) =>
+    resolveWith('dailyCheckin', req, reply);
 
   // Список челленджей текущего пользователя + инфо о пользователе (для выбора в профиле)
   app.get('/my/challenges', async (req) => {
@@ -139,11 +145,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/challenges/:id/leave', async (req, reply) => {
-    const r = await resolve(req, reply);
+    const r = await resolveWith('leave', req, reply);
     if (!r) return;
-    if (!isWeightChallenge(r.challenge)) {
-      return reply.code(400).send({ error: 'not_applicable' });
-    }
     await leaveChallenge(r.challenge.id, req.ctx!.user.id);
     return { ok: true };
   });
