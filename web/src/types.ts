@@ -27,12 +27,6 @@ export type DayState =
   | 'missed'
   | 'pending';
 
-export interface WeightSummary {
-  latestKg: number | null;
-  day: string | null;
-  weekDelta: number | null;
-  count: number;
-}
 
 export type ChallengePhase = 'upcoming' | 'running' | 'finished';
 
@@ -51,7 +45,7 @@ export interface FitnessSummary {
 export interface MyChallenge {
   id: number;
   key: string;
-  /** plank — планка со штрафами, weight — группа взвешиваний, fitness — тренировки и цели */
+  /** plank — планка со штрафами, fitness — тренировки и цели */
   kind: string;
   title: string;
   description: string;
@@ -59,7 +53,6 @@ export interface MyChallenge {
   todayState?: DayState;
   currentStreak?: number;
   bank?: number;
-  weight?: WeightSummary;
   fitness?: FitnessSummary;
 }
 
@@ -313,8 +306,6 @@ export interface WeightOverview {
   deltas: { week: number | null; month: number | null; total: number | null };
   stats: { count: number; min: number | null; max: number | null; firstDay: string | null };
   history: WeightPoint[];
-  /** Кто ещё в группе: цифры у каждого свои, видно только имена. */
-  members: { userId: number; name: string }[];
 }
 
 // ---------- Фитнес-челлендж ----------

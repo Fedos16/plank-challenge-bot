@@ -3,10 +3,10 @@ import { prisma } from '../lib/prisma';
 import { challengeDayNumber, dateToDay, dayjs, todayDay, type DayStr } from '../lib/time';
 
 /**
- * Механика челленджа: ежедневная планка со штрафами, группа для взвешиваний либо фитнес
- * с недельной нормой тренировок и жизнями.
+ * Механика челленджа: ежедневная планка со штрафами либо фитнес с недельной нормой
+ * тренировок и жизнями.
  */
-export const CHALLENGE_KINDS = ['plank', 'weight', 'fitness'] as const;
+export const CHALLENGE_KINDS = ['plank', 'fitness'] as const;
 export type ChallengeKind = (typeof CHALLENGE_KINDS)[number];
 
 /**
@@ -22,7 +22,6 @@ export type Capability =
 
 const CAPABILITIES: Record<ChallengeKind, readonly Capability[]> = {
   plank: ['dailyCheckin', 'bank'],
-  weight: ['leave'],
   fitness: ['weeklyWorkouts', 'goals', 'leave'],
 };
 

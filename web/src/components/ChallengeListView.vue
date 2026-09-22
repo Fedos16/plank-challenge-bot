@@ -12,14 +12,13 @@ defineProps<{
 }>();
 const emit = defineEmits<{
   (e: 'open-group', id: number): void;
-  (e: 'open-weight', id: number): void;
   (e: 'open-fitness', id: number): void;
   (e: 'open-personal', id: number): void;
   (e: 'create', title: string): void;
   (e: 'join', id: number): void;
 }>();
 
-const KIND_EMOJI: Record<string, string> = { weight: '⚖️ ', fitness: '🏋️ ' };
+const KIND_EMOJI: Record<string, string> = { fitness: '🏋️ ' };
 
 const newTitle = ref('');
 function create() {
@@ -32,10 +31,6 @@ function create() {
 /** В группе взвешиваний состояния дня нет — карточка рисуется по-другому. */
 function dayState(c: MyChallenge): DayState {
   return c.todayState ?? 'pending';
-}
-
-function formatKg(n: number): string {
-  return n.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
 function weekDone(c: MyChallenge): boolean {
@@ -51,12 +46,6 @@ function fitnessDay(c: MyChallenge): string {
   return f.daysTotal ? `День ${f.dayNumber} из ${f.daysTotal}` : `День ${f.dayNumber}`;
 }
 
-function weekDelta(c: MyChallenge): string {
-  const d = c.weight?.weekDelta;
-  if (d === null || d === undefined) return '';
-  if (d === 0) return '±0 за неделю';
-  return (d > 0 ? '+' : '−') + formatKg(Math.abs(d)) + ' кг за неделю';
-}
 </script>
 
 <template>
@@ -64,24 +53,9 @@ function weekDelta(c: MyChallenge): string {
     <h2 style="margin: 4px 0 14px">Мои челленджи</h2>
 
     <template v-for="c in group" :key="'g' + c.id">
-      <!-- Группа взвешиваний: ни серий, ни банка — вес и динамика -->
-      <div v-if="c.kind === 'weight'" class="card challenge-card" @click="$emit('open-weight', c.id)">
-        <div class="challenge-card-head">
-          <div class="challenge-title">⚖️ {{ c.title }}</div>
-          <span v-if="c.weight?.latestKg" class="fire">{{ formatKg(c.weight.latestKg) }} кг</span>
-        </div>
-        <div class="muted">{{ c.description }}</div>
-        <div class="challenge-card-meta">
-          <span v-if="c.weight?.count">{{ c.weight.count }} взвешиваний</span>
-          <span v-else>Весы ещё не подключены</span>
-          <span v-if="weekDelta(c)">{{ weekDelta(c) }}</span>
-          <span class="chev">›</span>
-        </div>
-      </div>
-
       <!-- Фитнес: день из скольких и прогресс к личной цели -->
       <div
-        v-else-if="c.kind === 'fitness'"
+        v-if="c.kind === 'fitness'"
         class="card challenge-card"
         @click="$emit('open-fitness', c.id)"
       >

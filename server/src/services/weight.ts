@@ -2,7 +2,6 @@ import type { WeightEntry } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { config } from '../lib/config';
 import { challengeDay, dateToDay, dayToDate, dayjs } from '../lib/time';
-import { displayName } from './users';
 
 function tz(): string {
   return config.defaultTimezone;
@@ -59,8 +58,6 @@ export interface WeightOverview {
   stats: { count: number; min: number | null; max: number | null; firstDay: string | null };
   /** От старых к новым — так фронт рисует график без разворота. */
   history: WeightPoint[];
-  /** Кто ещё в группе: цифры у каждого свои, видно только имена. */
-  members: { userId: number; name: string }[];
 }
 
 function toPoint(e: WeightEntry): WeightPoint {
@@ -218,55 +215,6 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/**
- * Участники групп, где вес — часть челленджа (взвешивания и фитнес), в которых состоит
- * человек. Планка здесь ни при чём: вес к ней отношения не имеет.
- */
-async function groupMembers(userId: number): Promise<{ userId: number; name: string }[]> {
-  const mine = await prisma.participation.findMany({
-    where: {
-      userId,
-      status: 'active',
-      challenge: { isActive: true, kind: { in: ['weight', 'fitness'] } },
-    },
-    select: { challengeId: true },
-  });
-  const neighbours = await prisma.participation.findMany({
-    where: { challengeId: { in: mine.map((p) => p.challengeId) }, status: 'active' },
-    select: { user: true },
-    distinct: ['userId'],
-  });
-
-  const byId = new Map<number, string>();
-  for (const n of neighbours) byId.set(n.user.id, displayName(n.user));
-  return [...byId.entries()].map(([id, name]) => ({ userId: id, name }));
-}
-
-export interface WeightSummary {
-  latestKg: number | null;
-  day: string | null;
-  weekDelta: number | null;
-  count: number;
-}
-
-/** Вес и недельная динамика одной строкой — для карточки челленджа в списке. */
-export async function getWeightSummary(userId: number): Promise<WeightSummary> {
-  const latest = await prisma.weightEntry.findFirst({
-    where: { userId },
-    orderBy: { measuredAt: 'desc' },
-  });
-  const count = await prisma.weightEntry.count({ where: { userId } });
-  if (!latest) return { latestKg: null, day: null, weekDelta: null, count };
-
-  const weekAgo = await entryBefore(userId, dayjs(latest.measuredAt).subtract(7, 'day').toDate());
-  return {
-    latestKg: latest.weightKg,
-    day: dateToDay(latest.day),
-    weekDelta: weekAgo ? round1(latest.weightKg - weekAgo.weightKg) : null,
-    count,
-  };
-}
-
 export async function getWeightOverview(userId: number): Promise<WeightOverview> {
   const entries = await prisma.weightEntry.findMany({
     where: { userId },
@@ -274,7 +222,6 @@ export async function getWeightOverview(userId: number): Promise<WeightOverview>
     take: HISTORY_LIMIT,
   });
   const count = await prisma.weightEntry.count({ where: { userId } });
-  const members = await groupMembers(userId);
   const latest = entries[0];
 
   if (!latest) {
@@ -283,7 +230,6 @@ export async function getWeightOverview(userId: number): Promise<WeightOverview>
       deltas: { week: null, month: null, total: null },
       stats: { count: 0, min: null, max: null, firstDay: null },
       history: [],
-      members,
     };
   }
 
@@ -313,7 +259,6 @@ export async function getWeightOverview(userId: number): Promise<WeightOverview>
       firstDay: first ? dateToDay(first.day) : null,
     },
     history: entries.map(toPoint).reverse(),
-    members,
   };
 }
 
