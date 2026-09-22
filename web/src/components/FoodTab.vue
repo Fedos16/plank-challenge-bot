@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { api } from '../api';
 import type { FoodDay, FoodEntry, FoodProduct, Meal } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { formatDateRu } from '../helpers';
+import { capitalize, formatDayHumanRu, todayInZone, weekdayShortRu } from '../helpers';
 import { errorText, formatNum, newClientId, numOrNull } from '../fitness';
 import LineChart from './LineChart.vue';
 
@@ -102,6 +102,14 @@ async function load(day?: string) {
     loading.value = false;
   }
 }
+
+/** Заголовок дня: «Сегодня, вт», «Вчера, пн», дальше — «Пн, 15 сен». */
+const dayTitle = computed(() => {
+  if (!data.value) return '';
+  const today = data.value.isToday ? data.value.day : todayInZone();
+  const human = capitalize(formatDayHumanRu(data.value.day, today));
+  return human === 'Сегодня' || human === 'Вчера' ? `${human}, ${weekdayShortRu(data.value.day)}` : human;
+});
 
 function shiftDay(delta: number) {
   if (!data.value) return;
@@ -251,7 +259,7 @@ onMounted(async () => {
   <template v-else-if="data">
     <div class="day-nav">
       <button class="btn small secondary" @click="shiftDay(-1)">‹</button>
-      <div class="day-title">{{ data.isToday ? 'Сегодня' : formatDateRu(data.day) }}</div>
+      <div class="day-title">{{ dayTitle }}</div>
       <button class="btn small secondary" :disabled="data.isToday" @click="shiftDay(1)">›</button>
     </div>
 

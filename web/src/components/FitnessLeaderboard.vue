@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { api } from '../api';
 import type { FeedItem, FitnessLeaderboardRow, FitnessOverview, FitnessParticipant } from '../types';
-import { formatDateRu, formatTimeRu, initials } from '../helpers';
+import { formatDayHumanRu, formatTimeRu, initials, todayInZone } from '../helpers';
 import {
   GOAL_EMOJI,
   GOAL_LABEL,
@@ -40,10 +40,19 @@ function challengeDay(iso: string): string {
   return new Date(iso).toLocaleDateString('sv-SE', { timeZone: props.overview.challenge.timezone });
 }
 
+const today = computed(() => todayInZone(props.overview.challenge.timezone));
+
+/** Неделя участника точками: закрашенные — сделано, пустые — осталось до нормы. */
+function weekDots(r: FitnessLeaderboardRow): boolean[] {
+  if (!r.week || r.eliminated) return [];
+  const total = Math.max(r.week.required, Math.min(r.week.done, 7));
+  return Array.from({ length: total }, (_, i) => i < r.week!.done);
+}
+
 function statusLine(r: FitnessLeaderboardRow): string {
   if (r.eliminated) return `выбыл на неделе ${r.eliminatedAtWeekNumber}`;
   const parts: string[] = [];
-  if (r.week) parts.push(`${r.week.done} из ${r.week.required} на неделе`);
+  if (r.week) parts.push(`${r.week.done} из ${r.week.required}`);
   parts.push(`всего ${r.totalCounted}`);
   if (r.normPercent !== null) parts.push(`норма ${r.normPercent}%`);
   return parts.join(' · ');
@@ -74,13 +83,23 @@ onMounted(load);
   <template v-else>
     <div class="card">
       <h3>Рейтинг</h3>
-      <div v-for="(r, i) in rows" :key="r.participationId" class="row" :class="{ out: r.eliminated }">
+      <div
+        v-for="(r, i) in rows"
+        :key="r.participationId"
+        class="row"
+        :class="{ out: r.eliminated, me: r.isMe }"
+      >
         <div class="rank">{{ r.eliminated ? '☠️' : i + 1 }}</div>
         <img v-if="r.photoUrl" :src="r.photoUrl" class="pic" alt="" />
         <div v-else class="pic">{{ initials(r.name) }}</div>
         <div class="grow">
-          <div class="name">{{ r.name }} <span v-if="r.isMe" class="muted">· вы</span></div>
-          <div class="meta">{{ statusLine(r) }}</div>
+          <div class="name">{{ r.name }} <span v-if="r.isMe" class="me-tag">вы</span></div>
+          <div class="meta">
+            <span v-if="weekDots(r).length" class="dots" :title="`${r.week?.done} из ${r.week?.required} на неделе`">
+              <span v-for="(filled, k) in weekDots(r)" :key="k" class="dot" :class="{ filled }" />
+            </span>
+            {{ statusLine(r) }}
+          </div>
         </div>
         <div class="lives">{{ hearts(r.livesLeft, r.livesTotal) }}</div>
       </div>
@@ -118,7 +137,7 @@ onMounted(load);
             <span v-if="w.verdict !== 'counted'" class="muted">· {{ VERDICT_LABEL[w.verdict] }}</span>
           </div>
           <div class="muted">
-            {{ formatDateRu(challengeDay(w.startedAt)) }}, {{ formatTimeRu(w.startedAt) }} · {{ feedMeta(w) }}
+            {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ feedMeta(w) }}
           </div>
         </div>
       </div>
@@ -130,6 +149,48 @@ onMounted(load);
 <style scoped>
 .row.out {
   opacity: 0.55;
+}
+/* своя строка: лёгкая подложка цветом акцента */
+.row.me {
+  background: rgba(255, 107, 53, 0.09);
+  border-radius: 12px;
+  margin: 0 -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-bottom-color: transparent;
+}
+.me-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  vertical-align: middle;
+  background: var(--accent);
+  color: #fff;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(128, 128, 128, 0.45);
+  box-sizing: border-box;
+}
+.dot.filled {
+  background: var(--green);
+  border-color: var(--green);
 }
 .row .grow {
   flex: 1;

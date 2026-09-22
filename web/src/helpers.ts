@@ -54,6 +54,39 @@ export function formatDayTitleRu(iso: string): string {
   return weekday ? `${weekday}, ${formatDateRu(iso)}` : iso;
 }
 
+const MONTH_SHORT_RU = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+/** Сегодняшний день YYYY-MM-DD в заданном часовом поясе (в поясе челленджа); без пояса — местный. */
+export function todayInZone(timeZone?: string): string {
+  try {
+    return new Date().toLocaleDateString('sv-SE', timeZone ? { timeZone } : undefined);
+  } catch {
+    return new Date().toLocaleDateString('sv-SE');
+  }
+}
+
+/**
+ * Дата по-человечески относительно `today`: «сегодня», «вчера», «пн, 15 сен», в другом году —
+ * «пн, 15 сен 2025». Для лент и журналов, где полная дата только шумит.
+ */
+export function formatDayHumanRu(iso: string, today: string): string {
+  if (!iso) return '';
+  if (iso === today) return 'сегодня';
+  const dt = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return iso;
+  const diff = daysBetweenISO(iso, today);
+  if (iso < today && diff === 1) return 'вчера';
+  const weekday = weekdayShortRu(iso);
+  const dayMonth = `${dt.getDate()} ${MONTH_SHORT_RU[dt.getMonth()]}`;
+  const sameYear = iso.slice(0, 4) === today.slice(0, 4);
+  return `${weekday}, ${dayMonth}${sameYear ? '' : ` ${dt.getFullYear()}`}`;
+}
+
+/** Первая буква заглавная: «сегодня» → «Сегодня». */
+export function capitalize(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
 /** ISO-дата-время → ЧЧ:ММ */
 export function formatTimeRu(iso: string): string {
   if (!iso) return '';

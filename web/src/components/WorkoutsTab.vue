@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api } from '../api';
-import type { FitnessOverview, Workout } from '../types';
+import type { FitnessOverview, WeekDay, Workout } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { daysBetweenISO, formatDateRu, formatTimeRu } from '../helpers';
+import { daysBetweenISO, formatDateRu, formatDayHumanRu, formatTimeRu, todayInZone } from '../helpers';
+import WeekStrip from './WeekStrip.vue';
 import {
   SOURCE_LABEL,
   SPORT_EMOJI,
@@ -66,7 +67,45 @@ function challengeDay(iso: string): string {
 interface WeekGroup {
   weekNumber: number;
   summary: string;
+  /** Полоска недели; null — до старта или неделя без итога. */
+  days: WeekDay[] | null;
   items: Workout[];
+}
+
+const today = computed(() => todayInZone(props.overview.challenge.timezone));
+
+function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Полоска закрытой недели по журналу: границы недели — от старта челленджа, окно участия —
+ * из итога недели (вступивший посреди недели отвечает только за остаток).
+ */
+function closedWeekDays(weekNumber: number, window: { start: string; end: string }, items: Workout[]): WeekDay[] {
+  const ch = props.overview.challenge;
+  const start = addDays(ch.startDate, (weekNumber - 1) * 7);
+  let end = addDays(start, 6);
+  if (ch.endDate && ch.endDate < end) end = ch.endDate;
+  const byDay = new Map<string, number>();
+  for (const w of items) {
+    if (w.verdict !== 'counted') continue;
+    const day = challengeDay(w.startedAt);
+    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  }
+  const days: WeekDay[] = [];
+  for (let day = start; day <= end; day = addDays(day, 1)) {
+    days.push({
+      day,
+      count: byDay.get(day) ?? 0,
+      isToday: day === today.value,
+      isFuture: day > today.value,
+      inWindow: day >= window.start && day <= window.end,
+    });
+  }
+  return days;
 }
 
 /** Журнал по неделям челленджа, от свежих к старым; у недели — её итог, если он уже есть. */
@@ -86,13 +125,16 @@ const groups = computed<WeekGroup[]>(() => {
       const closed = game.history.find((h) => h.weekNumber === weekNumber);
       const current = game.currentWeek?.weekNumber === weekNumber ? game.currentWeek : null;
       let summary = '';
+      let days: WeekDay[] | null = null;
       if (closed) {
         const mark = closed.status === 'passed' ? '✅' : closed.status === 'forgiven' ? '🤝' : '💔';
         summary = `${mark} ${closed.done} из ${closed.required}`;
+        days = closedWeekDays(weekNumber, closed, items);
       } else if (current) {
         summary = `${current.done} из ${current.required}`;
+        days = current.days;
       }
-      return { weekNumber, summary, items };
+      return { weekNumber, summary, days, items };
     });
 });
 
@@ -193,8 +235,11 @@ onMounted(load);
 
     <div v-for="g in groups" :key="g.weekNumber" class="card">
       <div class="week-head">
-        <h3>{{ g.weekNumber > 0 ? `Неделя ${g.weekNumber}` : 'До старта' }}</h3>
-        <span class="muted">{{ g.summary }}</span>
+        <div>
+          <h3>{{ g.weekNumber > 0 ? `Неделя ${g.weekNumber}` : 'До старта' }}</h3>
+          <div v-if="g.summary" class="muted">{{ g.summary }}</div>
+        </div>
+        <WeekStrip v-if="g.days" :days="g.days" tone="card" size="sm" />
       </div>
       <div v-for="w in g.items" :key="w.id" class="workout">
         <div class="ico">{{ SPORT_EMOJI[w.sport] ?? '💪' }}</div>
@@ -204,7 +249,7 @@ onMounted(load);
             <span class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
           </div>
           <div class="muted">
-            {{ formatDateRu(challengeDay(w.startedAt)) }}, {{ formatTimeRu(w.startedAt) }} · {{ meta(w) }}
+            {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ meta(w) }}
           </div>
           <div v-if="w.note" class="muted">{{ w.note }}</div>
           <div v-if="w.session" class="muted">
@@ -234,7 +279,12 @@ onMounted(load);
 .week-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.week-head h3 {
+  margin: 0;
 }
 .workout {
   display: flex;

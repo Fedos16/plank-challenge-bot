@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { api } from '../api';
 import type { FitnessOverview } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { formatDateRu, weekdayShortRu } from '../helpers';
+import { formatDateRu } from '../helpers';
 import { GOAL_EMOJI, GOAL_LABEL, UNIT_LABEL, errorText, formatNum, hearts } from '../fitness';
 import GoalOnboarding from './GoalOnboarding.vue';
 import BodyTab from './BodyTab.vue';
@@ -11,6 +11,7 @@ import WorkoutsTab from './WorkoutsTab.vue';
 import FitnessLeaderboard from './FitnessLeaderboard.vue';
 import ConnectionsCard from './ConnectionsCard.vue';
 import FoodTab from './FoodTab.vue';
+import WeekStrip from './WeekStrip.vue';
 
 const props = defineProps<{ challengeId: number }>();
 const emit = defineEmits<{ (e: 'back'): void; (e: 'left'): void }>();
@@ -85,12 +86,23 @@ const remaining = computed(() => {
   return Math.max(0, Math.round(left * 10) / 10);
 });
 
-/** Подпись под счётом недели: сколько осталось и сколько на это дней. */
-/** Прошедший день зачётного окна без тренировки: серый кружок с крестиком. */
-function dayMissed(d: { count: number; isToday: boolean; isFuture: boolean; inWindow: boolean }): boolean {
-  return d.inWindow && !d.isToday && !d.isFuture && d.count === 0;
-}
+/**
+ * Состояние текущей недели для цвета блока: closed — норма набрана, risk — дней осталось
+ * не больше, чем недостающих тренировок (пропускать уже нельзя), lost — норма не набирается
+ * даже при максимуме тренировок в день, normal — запас ещё есть.
+ */
+const weekState = computed<'closed' | 'risk' | 'lost' | 'normal'>(() => {
+  const week = data.value?.game.currentWeek;
+  if (!week) return 'normal';
+  const left = week.required - week.done;
+  if (left <= 0) return 'closed';
+  const daysLeft = week.days.filter((d) => d.inWindow && (d.isToday || d.isFuture)).length;
+  const perDay = Math.max(1, data.value?.settings.maxWorkoutsPerDay ?? 1);
+  if (left > daysLeft * perDay) return 'lost';
+  return left >= daysLeft ? 'risk' : 'normal';
+});
 
+/** Подпись под счётом недели: сколько осталось и сколько на это дней. */
 const weekLabel = computed(() => {
   const week = data.value?.game.currentWeek;
   if (!week) return '';
@@ -98,7 +110,13 @@ const weekLabel = computed(() => {
   if (left <= 0) return `неделя ${week.weekNumber} закрыта 🎉`;
   const daysLeft = week.days.filter((d) => d.inWindow && (d.isToday || d.isFuture)).length;
   const word = left === 1 ? 'тренировка' : left < 5 ? 'тренировки' : 'тренировок';
-  return `неделя ${week.weekNumber} · ещё ${left} ${word} за ${daysLeft} дн.`;
+  const rest = `ещё ${left} ${word} за ${daysLeft} дн.`;
+  if (weekState.value === 'lost') return `неделя ${week.weekNumber} · норма уже не набирается: ${rest}`;
+  if (weekState.value === 'risk') {
+    if (daysLeft <= 1) return `неделя ${week.weekNumber} · сегодня обязательно!`;
+    return `неделя ${week.weekNumber} · ${rest} — без пропусков`;
+  }
+  return `неделя ${week.weekNumber} · ${rest}`;
 });
 
 async function toggleShare() {
@@ -180,26 +198,19 @@ watch(() => props.challengeId, load);
           </div>
 
           <!-- Игра: жизни и норма текущей недели -->
-          <div class="streak-hero" :class="{ out: data.game.lives.eliminated }">
+          <div
+            class="streak-hero"
+            :class="{
+              out: data.game.lives.eliminated,
+              closed: weekState === 'closed',
+              risk: weekState === 'risk' || weekState === 'lost',
+            }"
+          >
             <div class="hero-lives">{{ hearts(data.game.lives.left, data.game.lives.total) }}</div>
             <template v-if="data.game.currentWeek">
               <div class="num">{{ data.game.currentWeek.done }} из {{ data.game.currentWeek.required }}</div>
               <div class="lbl">{{ weekLabel }}</div>
-              <div class="days">
-                <div
-                  v-for="d in data.game.currentWeek.days"
-                  :key="d.day"
-                  class="day-col"
-                  :class="{ today: d.isToday, off: !d.inWindow }"
-                  :title="formatDateRu(d.day)"
-                >
-                  <span class="dow">{{ weekdayShortRu(d.day) }}</span>
-                  <span
-                    class="day"
-                    :class="{ done: d.count > 0, missed: dayMissed(d), today: d.isToday }"
-                  >{{ d.count > 0 ? '✓' : dayMissed(d) ? '×' : '' }}</span>
-                </div>
-              </div>
+              <WeekStrip :days="data.game.currentWeek.days" tone="hero" class="week-strip" />
             </template>
             <div v-else class="lbl">
               {{ data.challenge.phase === 'upcoming' ? 'Челлендж ещё не начался' : 'Челлендж завершён' }}
@@ -389,7 +400,9 @@ watch(() => props.challengeId, load);
   border: 1.5px solid rgba(231, 76, 60, 0.4);
   font-size: 14px;
 }
-.streak-hero.out {
+.streak-hero.out,
+.streak-hero.out.closed,
+.streak-hero.out.risk {
   background: linear-gradient(135deg, #6b6b73, #8e8e96);
 }
 .hero-lives {
@@ -400,60 +413,28 @@ watch(() => props.challengeId, load);
 .streak-hero .num {
   font-size: 44px;
 }
-.days {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+.week-strip {
   margin-top: 12px;
 }
-.day-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+/* норма набрана: зелёный, галочки на нём — белые */
+.streak-hero.closed {
+  background: linear-gradient(135deg, #1fa463, #34d27a);
 }
-.dow {
-  font-size: 11px;
-  line-height: 1;
-  opacity: 0.75;
-}
-.day-col.today .dow {
-  opacity: 1;
-  font-weight: 800;
-}
-.day {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 800;
-  box-sizing: border-box;
-}
-/* тренировка была: зелёный кружок с галочкой */
-.day.done {
-  background: var(--green);
-  border-color: var(--green);
-  color: #fff;
-}
-/* прошедший день без тренировки: приглушённый серый, почти закрашенный, с бледным крестиком */
-.day.missed {
-  background: rgba(150, 150, 158, 0.85);
-  border-color: rgba(150, 150, 158, 0.85);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-}
-/* сегодня: заметная белая обводка поверх любого состояния */
-.day.today {
+.streak-hero.closed :deep(.day.done) {
+  background: #fff;
   border-color: #fff;
-  box-shadow: 0 0 0 2.5px #fff;
+  color: #1fa463;
 }
-/* день до вступления: за него участник не отвечает */
-.day-col.off {
-  opacity: 0.3;
+/* пропускать уже нельзя: красный и подпись жирным */
+.streak-hero.risk {
+  background: linear-gradient(135deg, #d63a2f, #f06a5e);
+}
+.streak-hero.risk .lbl {
+  opacity: 1;
+  font-weight: 700;
+}
+.streak-hero .lbl {
+  padding: 0 16px;
 }
 .week-mark {
   min-width: 78px;

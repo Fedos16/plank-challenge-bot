@@ -403,13 +403,22 @@ export interface LivesInfo {
   eliminatedAtWeekNumber: number | null;
 }
 
+/** День в полоске недели: сколько зачтённых тренировок и где он относительно сегодня и окна участия. */
+export interface WeekDay {
+  day: string;
+  count: number;
+  isToday: boolean;
+  isFuture: boolean;
+  inWindow: boolean;
+}
+
 export interface CurrentWeek {
   weekNumber: number;
   start: string;
   end: string;
   required: number;
   done: number;
-  days: { day: string; count: number; isToday: boolean; isFuture: boolean; inWindow: boolean }[];
+  days: WeekDay[];
 }
 
 export type WeekStatus = 'passed' | 'failed' | 'forgiven';
