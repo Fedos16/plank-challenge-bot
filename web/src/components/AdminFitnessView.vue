@@ -214,6 +214,17 @@ async function setExcluded(p: AdminFitnessParticipant, w: Workout, excluded: boo
   }, excluded ? 'Снята с зачёта' : 'Возвращена в зачёт');
 }
 
+/** Ручной зачёт: правило отсекло настоящую тренировку — короткую сессию или вторую за день. */
+async function setForceCounted(p: AdminFitnessParticipant, w: Workout, forceCounted: boolean) {
+  const id = selectedId.value;
+  if (!id) return;
+  await run(async () => {
+    await api.adminForceCountWorkout(id, w.id, forceCounted);
+    moderated.value = (await api.adminParticipantWorkouts(id, p.participationId)).workouts;
+    await reloadGame();
+  }, forceCounted ? 'Засчитана вручную' : 'Ручной зачёт снят');
+}
+
 function progressText(p: AdminFitnessParticipant): string {
   const g = p.progress;
   if (!g?.unit) return '';
@@ -372,19 +383,42 @@ onMounted(async () => {
             <button v-else class="btn small secondary" @click="setStatus(p, 'active')">Вернуть в челлендж</button>
           </div>
 
-          <!-- Модерация: снять тренировку с зачёта — как «фейк» в планке -->
+          <!-- Модерация: снять тренировку с зачёта («фейк» в планке) или засчитать вручную -->
           <div v-if="moderating === p.participationId" class="moderation">
             <div v-for="w in moderated" :key="w.id" class="list-item">
               <div class="grow">
-                <div>{{ sportTitle(w) }} · {{ w.durationMin }} мин <span class="muted">· {{ VERDICT_LABEL[w.verdict] }}</span></div>
+                <div>
+                  {{ sportTitle(w) }} · {{ w.durationMin }} мин
+                  <span class="muted">· {{ VERDICT_LABEL[w.verdict] }}</span>
+                  <span v-if="w.forceCounted" class="muted"> · засчитана вручную</span>
+                </div>
                 <div class="muted">{{ formatDateTimeRu(w.startedAt) }} · {{ SOURCE_LABEL[w.source] ?? w.source }}</div>
+                <div v-if="w.session" class="muted">
+                  Часть тренировки из {{ w.session.size }} записей подряд, вместе {{ w.session.durationMin }} мин
+                </div>
               </div>
               <button v-if="w.verdict !== 'excluded'" class="btn small secondary" @click="setExcluded(p, w, true)">Снять</button>
               <button v-else class="btn small" @click="setExcluded(p, w, false)">Вернуть</button>
+              <button
+                v-if="w.forceCounted"
+                class="btn small secondary"
+                @click="setForceCounted(p, w, false)"
+              >
+                Отменить зачёт
+              </button>
+              <button
+                v-else-if="w.verdict !== 'counted' && w.verdict !== 'excluded'"
+                class="btn small"
+                @click="setForceCounted(p, w, true)"
+              >
+                Засчитать
+              </button>
             </div>
             <div v-if="!moderated.length" class="muted">Тренировок нет.</div>
             <div class="muted" style="margin-top: 6px">
-              Уже закрытую неделю снятие само не меняет — после него нажмите «Пересчитать» в разделе «Недели».
+              «Засчитать» проводит тренировку мимо минимальной длительности и лимита дня: для случаев,
+              когда часы разрезали занятие или человек тренировался дважды. Уже закрытую неделю ни снятие,
+              ни ручной зачёт сами не меняют — после них нажмите «Пересчитать» в разделе «Недели».
             </div>
           </div>
         </div>

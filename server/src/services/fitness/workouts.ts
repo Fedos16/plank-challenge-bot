@@ -3,7 +3,14 @@ import { prisma } from '../../lib/prisma';
 import { dateToDay, deadlineInstant, dayjs, type DayStr } from '../../lib/time';
 import type { DayWindow } from '../../lib/weeks';
 import { challengeEndDay } from '../challenge';
-import { assignDuplicates, classifyWorkouts, type CountingRules, type Verdict } from './counting';
+import {
+  assignDuplicates,
+  classify,
+  sessionIndex,
+  type CountingRules,
+  type Session,
+  type Verdict,
+} from './counting';
 
 /** Виды активности для ручного ввода. Источники присылают свои названия — они ложатся в sportRaw. */
 export const SPORTS = [
@@ -62,9 +69,18 @@ export interface WorkoutDTO {
   /** Идёт ли в зачёт недели этого челленджа и если нет — почему. */
   verdict: Verdict;
   excludedNote: string | null;
+  /** Засчитана админом вручную, вопреки длительности или лимиту дня. */
+  forceCounted: boolean;
+  forceNote: string | null;
+  /**
+   * Часть общей тренировки, если источник разрезал занятие на несколько записей.
+   * null — запись сама по себе. В зачёт идёт сессия целиком, поэтому её длительность
+   * важнее длительности отдельного сегмента.
+   */
+  session: { id: number; durationMin: number; size: number } | null;
 }
 
-export function toWorkoutDTO(w: Workout, verdict: Verdict): WorkoutDTO {
+export function toWorkoutDTO(w: Workout, verdict: Verdict, session?: Session): WorkoutDTO {
   return {
     id: w.id,
     source: w.source,
@@ -78,6 +94,16 @@ export function toWorkoutDTO(w: Workout, verdict: Verdict): WorkoutDTO {
     note: w.note,
     verdict,
     excludedNote: w.excludedNote,
+    forceCounted: w.forceCounted,
+    forceNote: w.forceNote,
+    session:
+      session && session.workoutIds.length > 1
+        ? {
+            id: session.id,
+            durationMin: Math.round(session.durationSec / 60),
+            size: session.workoutIds.length,
+          }
+        : null,
   };
 }
 
@@ -92,8 +118,11 @@ export function challengeInstants(ch: Challenge): { from: Date; to: Date } {
 export async function listWorkouts(ch: Challenge, userId: number): Promise<WorkoutDTO[]> {
   const { from, to } = challengeInstants(ch);
   const workouts = await loadWorkouts(userId, from, to);
-  const verdicts = classifyWorkouts(workouts, rulesOf(ch));
-  return workouts.map((w) => toWorkoutDTO(w, verdicts.get(w.id) ?? 'counted')).reverse();
+  const { verdicts, sessions } = classify(workouts, rulesOf(ch));
+  const bySession = sessionIndex(sessions);
+  return workouts
+    .map((w) => toWorkoutDTO(w, verdicts.get(w.id) ?? 'counted', bySession.get(w.id)))
+    .reverse();
 }
 
 /**
@@ -347,6 +376,34 @@ export async function setWorkoutExcluded(
   if (!existing) return null;
   return prisma.workout.update({
     where: { id: workoutId },
-    data: { excluded, excludedNote: excluded ? note : null },
+    data: {
+      excluded,
+      excludedNote: excluded ? note : null,
+      // снятие и ручной зачёт противоречат друг другу: побеждает последнее решение админа
+      ...(excluded ? { forceCounted: false, forceNote: null } : {}),
+    },
+  });
+}
+
+/**
+ * Админ засчитывает тренировку вручную. Нужно там, где правило отсекает настоящее занятие:
+ * источник разрезал его так, что сессия не дотянула до минимума, или человек тренировался
+ * дважды за день при лимите в одну. Такая запись идёт в зачёт мимо длительности и лимита.
+ */
+export async function setWorkoutForceCounted(
+  workoutId: number,
+  userId: number,
+  forceCounted: boolean,
+  note: string | null,
+): Promise<Workout | null> {
+  const existing = await prisma.workout.findFirst({ where: { id: workoutId, userId, deletedAt: null } });
+  if (!existing) return null;
+  return prisma.workout.update({
+    where: { id: workoutId },
+    data: {
+      forceCounted,
+      forceNote: forceCounted ? note : null,
+      ...(forceCounted ? { excluded: false, excludedNote: null } : {}),
+    },
   });
 }

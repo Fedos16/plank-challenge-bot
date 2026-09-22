@@ -206,6 +206,12 @@ onMounted(load);
             {{ formatDateRu(challengeDay(w.startedAt)) }}, {{ formatTimeRu(w.startedAt) }} · {{ meta(w) }}
           </div>
           <div v-if="w.note" class="muted">{{ w.note }}</div>
+          <div v-if="w.session" class="muted">
+            Часть тренировки из {{ w.session.size }} записей подряд, вместе {{ w.session.durationMin }} мин
+          </div>
+          <div v-if="w.forceCounted" class="muted">
+            Засчитана админом<template v-if="w.forceNote">: {{ w.forceNote }}</template>
+          </div>
           <div v-if="w.excludedNote" class="muted">Админ: {{ w.excludedNote }}</div>
         </div>
         <button class="row-x" :disabled="busy" @click="remove(w)">✕</button>

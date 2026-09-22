@@ -19,7 +19,7 @@ import {
   unforgiveWeek,
 } from '../services/fitness/evaluation';
 import { announceWeekResults } from '../services/fitness/fitnessReport';
-import { listWorkouts, setWorkoutExcluded } from '../services/fitness/workouts';
+import { listWorkouts, setWorkoutExcluded, setWorkoutForceCounted } from '../services/fitness/workouts';
 
 /**
  * Админка челленджей по :id. Планка по-прежнему живёт в /api/admin/challenge (она одна и
@@ -205,15 +205,19 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
     return { workouts: await listWorkouts(ch, p.userId) };
   });
 
-  // Снять тренировку с зачёта или вернуть. Закрытую неделю это само не меняет — нужен «пересчитать»
+  // Снять тренировку с зачёта, вернуть её или засчитать вручную. Закрытую неделю это само
+  // не меняет — нужен «пересчитать»
   app.patch('/:id/workouts/:wid', async (req, reply) => {
     const params = req.params as { id: string; wid: string };
     const ch = await requireFitness(params.id, reply);
     if (!ch) return;
     const wid = parseId(params.wid, reply, 'bad_workout_id');
     if (wid === null) return;
-    const body = (req.body ?? {}) as { excluded?: unknown; note?: unknown };
-    if (typeof body.excluded !== 'boolean') return reply.code(400).send({ error: 'bad_request' });
+    const body = (req.body ?? {}) as { excluded?: unknown; forceCounted?: unknown; note?: unknown };
+    // ровно одно действие за запрос: снять с зачёта либо засчитать вручную
+    const hasExcluded = typeof body.excluded === 'boolean';
+    const hasForced = typeof body.forceCounted === 'boolean';
+    if (hasExcluded === hasForced) return reply.code(400).send({ error: 'bad_request' });
 
     // чужую тренировку трогать нельзя: только тех, кто состоит в этом челлендже
     const workout = await prisma.workout.findUnique({ where: { id: wid } });
@@ -223,7 +227,8 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
     if (!workout || !member) return reply.code(404).send({ error: 'workout_not_found' });
 
     const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim().slice(0, 200) : null;
-    await setWorkoutExcluded(wid, workout.userId, body.excluded, note);
+    if (hasExcluded) await setWorkoutExcluded(wid, workout.userId, body.excluded as boolean, note);
+    else await setWorkoutForceCounted(wid, workout.userId, body.forceCounted as boolean, note);
     return { ok: true };
   });
 

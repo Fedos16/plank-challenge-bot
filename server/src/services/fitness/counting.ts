@@ -9,6 +9,8 @@ export interface WorkoutLike {
   durationSec: number;
   excluded: boolean;
   duplicateOfId: number | null;
+  /** Админ засчитал вручную: минимальная длительность и лимит дня на неё не действуют. */
+  forceCounted: boolean;
 }
 
 /**
@@ -25,6 +27,13 @@ const SOURCE_PRIORITY: Record<string, number> = {
 
 /** С какой доли перекрытия две записи считаются одной тренировкой. */
 const DUPLICATE_OVERLAP = 0.5;
+
+/**
+ * Пауза, внутри которой соседние записи остаются одной тренировкой. Источники режут занятие
+ * по видам активности: дорожка и сразу за ней силовая приходят двумя записями с разрывом
+ * в секунды. Полчаса между ними — это уже разные занятия, поэтому окно короткое.
+ */
+export const SESSION_GAP_MIN = 15;
 
 function endMs(w: WorkoutLike): number {
   return w.startedAt.getTime() + Math.max(1, w.durationSec) * 1000;
@@ -68,47 +77,117 @@ export interface CountingRules {
 }
 
 /**
- * Почему тренировка идёт или не идёт в зачёт недели. В журнале и в сумме калорий остаётся
- * любая — вердикт решает только про норму.
+ * Тренировка целиком: одна запись либо несколько подряд идущих. В зачёт недели идёт именно
+ * сессия, а не отдельная запись источника.
  */
-export function classifyWorkouts(workouts: WorkoutLike[], rules: CountingRules): Map<number, Verdict> {
-  const verdicts = new Map<number, Verdict>();
-  const perDay = new Map<DayStr, number>();
-
-  // В зачёт идут самые ранние тренировки дня — порядок важен для лимита
-  const ordered = [...workouts].sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime() || a.id - b.id);
-  for (const w of ordered) {
-    if (w.excluded) verdicts.set(w.id, 'excluded');
-    else if (w.duplicateOfId !== null) verdicts.set(w.id, 'duplicate');
-    else if (w.durationSec < rules.minWorkoutMin * 60) verdicts.set(w.id, 'too_short');
-    else {
-      const day = challengeDay(w.startedAt, rules.tz);
-      const used = perDay.get(day) ?? 0;
-      if (used >= rules.maxWorkoutsPerDay) {
-        verdicts.set(w.id, 'day_limit');
-      } else {
-        perDay.set(day, used + 1);
-        verdicts.set(w.id, 'counted');
-      }
-    }
-  }
-  return verdicts;
+export interface Session {
+  /** id первой записи: устойчивый ключ, по которому сегменты видно как одно занятие. */
+  id: number;
+  workoutIds: number[];
+  /** День начала в поясе челленджа. */
+  day: DayStr;
+  /** Сумма длительностей сегментов: паузы между ними тренировкой не считаются. */
+  durationSec: number;
+  verdict: Verdict;
+  /** Засчитана админом вручную. */
+  forced: boolean;
 }
 
-/** Сколько засчитанных тренировок попало в окно, по дням и всего. */
+export interface Classification {
+  sessions: Session[];
+  /** Вердикт каждой записи: у сегментов одной сессии он общий. */
+  verdicts: Map<number, Verdict>;
+}
+
+/**
+ * Собирает записи в сессии и решает, какие из них идут в зачёт недели. В журнале и в сумме
+ * калорий остаётся любая запись — вердикт решает только про норму.
+ */
+export function classify(workouts: WorkoutLike[], rules: CountingRules): Classification {
+  const verdicts = new Map<number, Verdict>();
+  const active: WorkoutLike[] = [];
+
+  // Снятые и дубли в сессии не входят: иначе снятая запись продлевала бы соседнюю тренировку.
+  for (const w of workouts) {
+    if (w.excluded) verdicts.set(w.id, 'excluded');
+    else if (w.duplicateOfId !== null) verdicts.set(w.id, 'duplicate');
+    else active.push(w);
+  }
+
+  const ordered = [...active].sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime() || a.id - b.id);
+  const gapMs = SESSION_GAP_MIN * 60_000;
+
+  const groups: { first: WorkoutLike; items: WorkoutLike[]; endMs: number }[] = [];
+  for (const w of ordered) {
+    const current = groups[groups.length - 1];
+    if (current && w.startedAt.getTime() - current.endMs <= gapMs) {
+      current.items.push(w);
+      current.endMs = Math.max(current.endMs, endMs(w));
+    } else {
+      groups.push({ first: w, items: [w], endMs: endMs(w) });
+    }
+  }
+
+  // В зачёт идут самые ранние сессии дня — порядок важен для лимита
+  const perDay = new Map<DayStr, number>();
+  const sessions: Session[] = [];
+  for (const group of groups) {
+    const day = challengeDay(group.first.startedAt, rules.tz);
+    const durationSec = group.items.reduce((sum, w) => sum + w.durationSec, 0);
+    const forced = group.items.some((w) => w.forceCounted);
+
+    let verdict: Verdict;
+    if (forced) {
+      // Ручной зачёт — решение админа: он и слот дня не занимает, и лимитом не отсекается
+      verdict = 'counted';
+    } else if (durationSec < rules.minWorkoutMin * 60) {
+      verdict = 'too_short';
+    } else if ((perDay.get(day) ?? 0) >= rules.maxWorkoutsPerDay) {
+      verdict = 'day_limit';
+    } else {
+      perDay.set(day, (perDay.get(day) ?? 0) + 1);
+      verdict = 'counted';
+    }
+
+    for (const w of group.items) verdicts.set(w.id, verdict);
+    sessions.push({
+      id: group.first.id,
+      workoutIds: group.items.map((w) => w.id),
+      day,
+      durationSec,
+      verdict,
+      forced,
+    });
+  }
+
+  return { sessions, verdicts };
+}
+
+/** Сессия каждой записи: чтобы показать сегменты одного занятия вместе. */
+export function sessionIndex(sessions: Session[]): Map<number, Session> {
+  const index = new Map<number, Session>();
+  for (const s of sessions) for (const id of s.workoutIds) index.set(id, s);
+  return index;
+}
+
+/** Почему тренировка идёт или не идёт в зачёт недели. */
+export function classifyWorkouts(workouts: WorkoutLike[], rules: CountingRules): Map<number, Verdict> {
+  return classify(workouts, rules).verdicts;
+}
+
+/** Сколько засчитанных тренировок попало в окно, по дням и всего. Считаются сессии, а не записи. */
 export function countInWindow(
   workouts: WorkoutLike[],
   rules: CountingRules,
   window: Pick<DayWindow, 'start' | 'end'>,
 ): { done: number; byDay: Map<DayStr, number> } {
-  const verdicts = classifyWorkouts(workouts, rules);
+  const { sessions } = classify(workouts, rules);
   const byDay = new Map<DayStr, number>();
   let done = 0;
-  for (const w of workouts) {
-    if (verdicts.get(w.id) !== 'counted') continue;
-    const day = challengeDay(w.startedAt, rules.tz);
-    if (day < window.start || day > window.end) continue;
-    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  for (const s of sessions) {
+    if (s.verdict !== 'counted') continue;
+    if (s.day < window.start || s.day > window.end) continue;
+    byDay.set(s.day, (byDay.get(s.day) ?? 0) + 1);
     done += 1;
   }
   return { done, byDay };

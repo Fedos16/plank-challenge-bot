@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assignDuplicates,
+  classify,
   classifyWorkouts,
   countInWindow,
   overlapRatio,
@@ -19,6 +20,7 @@ function w(startIso: string, minutes: number, extra: Partial<WorkoutLike> = {}):
     durationSec: minutes * 60,
     excluded: false,
     duplicateOfId: null,
+    forceCounted: false,
     ...extra,
   };
 }
@@ -136,4 +138,50 @@ test('вступивший позже: норма за остаток недел
   assert.equal(countInWindow(workouts, RULES, week).done, 2);
   // привязка к окну участия теряла первую тренировку — ради этого правило и поменяли
   assert.equal(countInWindow(workouts, RULES, joined).done, 1);
+});
+
+test('classify: соседние записи — одна тренировка, длительность суммируется', () => {
+  // источник режет занятие по видам активности: дорожка, сразу за ней силовая
+  const treadmill = w('2026-10-05T17:03:00Z', 15);
+  const strength = w('2026-10-05T17:18:10Z', 10);
+  const { sessions, verdicts } = classify([treadmill, strength], RULES);
+
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].durationSec, 25 * 60);
+  // по отдельности обе короче минимума, вместе — полноценная тренировка
+  assert.deepEqual([verdicts.get(treadmill.id), verdicts.get(strength.id)], ['counted', 'counted']);
+});
+
+test('classify: длинная пауза разрывает тренировку на две', () => {
+  const gym = w('2026-10-05T16:03:00Z', 27);
+  const evening = w('2026-10-05T17:03:00Z', 25); // пауза 33 минуты
+  const { sessions } = classify([gym, evening], RULES);
+
+  assert.equal(sessions.length, 2);
+  assert.deepEqual(sessions.map((s) => s.verdict), ['counted', 'day_limit']);
+});
+
+test('countInWindow: разрезанное занятие считается одной тренировкой', () => {
+  const window = { start: '2026-10-05', end: '2026-10-11', days: 7 };
+  const workouts = [w('2026-10-05T17:03:00Z', 15), w('2026-10-05T17:18:10Z', 10)];
+  assert.equal(countInWindow(workouts, RULES, window).done, 1);
+});
+
+test('classify: ручной зачёт проводит мимо минимума и лимита дня', () => {
+  const full = w('2026-10-05T07:00:00Z', 40); // занимает лимит дня
+  const short = w('2026-10-05T17:00:00Z', 12, { forceCounted: true });
+  const { verdicts } = classify([full, short], RULES);
+
+  assert.deepEqual([verdicts.get(full.id), verdicts.get(short.id)], ['counted', 'counted']);
+});
+
+test('classify: зал из двух записей при часовом минимуме', () => {
+  const rules = { ...RULES, minWorkoutMin: 60 };
+  const treadmill = w('2026-09-21T17:03:00Z', 41.5);
+  const strength = w('2026-09-21T17:44:50Z', 11.1);
+  // вместе 52.6 минуты — до часа не дотягивает даже после склейки
+  assert.equal(classify([treadmill, strength], rules).sessions[0].verdict, 'too_short');
+
+  const forced = w('2026-09-21T17:44:50Z', 11.1, { forceCounted: true });
+  assert.equal(classify([treadmill, forced], rules).sessions[0].verdict, 'counted');
 });

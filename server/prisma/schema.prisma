@@ -369,6 +369,9 @@ model Workout {
   duplicateOfId Int?
   excluded      Boolean   @default(false) // снята админом
   excludedNote  String?
+  /// Засчитана админом вручную: минимальная длительность и лимит дня на неё не действуют
+  forceCounted  Boolean   @default(false)
+  forceNote     String?
   /// Удалена пользователем. Строка остаётся, чтобы повторная синхронизация её не воскресила
   deletedAt     DateTime?
   raw           Json? // урезанный исходник без массивов — для отладки парсеров

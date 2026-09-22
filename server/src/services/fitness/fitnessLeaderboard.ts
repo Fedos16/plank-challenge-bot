@@ -2,7 +2,7 @@ import type { Challenge } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { dayjs } from '../../lib/time';
 import { displayName } from '../users';
-import { classifyWorkouts } from './counting';
+import { classify, sessionIndex } from './counting';
 import { getGameState } from './evaluation';
 import { progressFor, type GoalType } from './goals';
 import { challengeInstants, loadWorkouts, rulesOf, toWorkoutDTO, type WorkoutDTO } from './workouts';
@@ -106,12 +106,13 @@ export async function getFitnessFeed(ch: Challenge, meId: number): Promise<FeedI
   const items: FeedItem[] = [];
   for (const p of participations) {
     const workouts = await loadWorkouts(p.userId, from, period.to);
-    const verdicts = classifyWorkouts(workouts, rulesOf(ch));
+    const { verdicts, sessions } = classify(workouts, rulesOf(ch));
+    const bySession = sessionIndex(sessions);
     for (const w of workouts) {
       // чужие дубли в ленте — шум: это та же тренировка из второго источника
       if (w.duplicateOfId !== null) continue;
       items.push({
-        ...toWorkoutDTO(w, verdicts.get(w.id) ?? 'counted'),
+        ...toWorkoutDTO(w, verdicts.get(w.id) ?? 'counted', bySession.get(w.id)),
         // заметка личная: мало ли что человек записал для себя
         note: p.userId === meId ? w.note : null,
         name: displayName(p.user),

@@ -196,6 +196,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ excluded, note }),
     }),
+  adminForceCountWorkout: (id: number, workoutId: number, forceCounted: boolean, note?: string) =>
+    request<{ ok: boolean }>(`/admin/challenges/${id}/workouts/${workoutId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ forceCounted, note }),
+    }),
   adminEvaluate: (id: number) =>
     request<{ ok: boolean; created: number; dm: number; chat: boolean }>(
       `/admin/challenges/${id}/evaluate`,

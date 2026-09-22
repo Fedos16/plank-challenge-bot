@@ -472,6 +472,11 @@ export interface Workout {
   note: string | null;
   verdict: Verdict;
   excludedNote: string | null;
+  /** Засчитана админом вручную, вопреки длительности или лимиту дня. */
+  forceCounted: boolean;
+  forceNote: string | null;
+  /** Часть общей тренировки: источник разрезал занятие на несколько записей. */
+  session: { id: number; durationMin: number; size: number } | null;
 }
 
 export interface WorkoutInput {
