@@ -181,7 +181,15 @@ export async function saveMeasurements(
       }));
 
     if (existing) {
-      result.updated.push(await prisma.weightEntry.update({ where: { id: existing.id }, data }));
+      // Метрики одного взвешивания могут приезжать разными выгрузками (Health Connect шлёт вес и
+      // жир отдельными точками): пустое значение не затирает уже известное
+      const merged = {
+        ...data,
+        bodyFat: data.bodyFat ?? existing.bodyFat,
+        water: data.water ?? existing.water,
+        muscle: data.muscle ?? existing.muscle,
+      };
+      result.updated.push(await prisma.weightEntry.update({ where: { id: existing.id }, data: merged }));
       continue;
     }
 

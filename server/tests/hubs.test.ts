@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mapHaeWorkout, parseHaeDate, parseHaePayload } from '../src/services/parsers/hae';
 import { parseHealthConnectPayload } from '../src/services/parsers/healthConnect';
+import { parseHealthConnectBody } from '../src/services/parsers/healthConnectBody';
 
 // ---------- Health Auto Export ----------
 
@@ -149,4 +150,54 @@ test('parseHealthConnectPayload: выгрузка без тренировок �
   assert.equal(parseHealthConnectPayload({ timestamp: HC.timestamp, exercise: 'нет' }), null);
   assert.equal(parseHealthConnectPayload([]), null);
   assert.equal(parseHealthConnectPayload(null), null);
+});
+
+// ---------- Health Connect: состав тела ----------
+
+test('parseHealthConnectBody: вес, жир, мышцы и вода одного взвешивания склеиваются по времени', () => {
+  const [m] = parseHealthConnectBody({
+    timestamp: '2026-09-22T05:35:00Z',
+    weight: [{ kilograms: 113.92, time: '2026-09-22T05:31:12Z' }],
+    body_fat: [{ percentage: 30.53, time: '2026-09-22T05:31:14Z' }], // весы пишут точки с разбегом в секунды
+    lean_body_mass: [{ kilograms: 79.14, time: '2026-09-22T05:31:12Z' }],
+    body_water_mass: [{ kilograms: 56.14, time: '2026-09-22T05:31:12Z' }],
+  });
+  assert.ok(m);
+  assert.equal(m.measuredAt.toISOString(), '2026-09-22T05:31:12.000Z');
+  assert.equal(m.weightKg, 113.92);
+  assert.equal(m.bodyFat, 30.5);
+  assert.equal(m.muscle, 69.5); // 79.14 / 113.92 — база хранит долю, а не килограммы
+  assert.equal(m.water, 49.3);
+  assert.equal(m.scaleUserId, null); // пишется владельцу токена без профилей openScale
+});
+
+test('parseHealthConnectBody: без веса взвешивания нет, тренировочная выгрузка — не ошибка', () => {
+  assert.deepEqual(parseHealthConnectBody({ timestamp: '2026-09-22T05:35:00Z', exercise: [] }), []);
+  assert.deepEqual(parseHealthConnectBody({ body_fat: [{ percentage: 30.5, time: '2026-09-22T05:31:12Z' }] }), []);
+  assert.deepEqual(parseHealthConnectBody(null), []);
+  assert.deepEqual(parseHealthConnectBody([]), []);
+});
+
+test('parseHealthConnectBody: жир далеко по времени не приклеивается, мусор в процентах → null', () => {
+  const [m] = parseHealthConnectBody({
+    weight: [{ kilograms: 84.3, time: '2026-09-22T05:31:12Z' }],
+    body_fat: [{ percentage: 24.1, time: '2026-09-22T09:00:00Z' }], // другое взвешивание без веса
+    lean_body_mass: [{ kilograms: 0, time: '2026-09-22T05:31:12Z' }],
+  });
+  assert.equal(m!.bodyFat, null);
+  assert.equal(m!.muscle, null);
+  assert.equal(m!.water, null);
+});
+
+test('parseHealthConnectBody: несколько взвешиваний за окно — по записи на каждый вес', () => {
+  const list = parseHealthConnectBody({
+    weight: [
+      { kilograms: 84.3, time: '2026-09-21T05:30:00Z' },
+      { kilograms: 84.0, time: '2026-09-22T05:31:12Z' },
+    ],
+    body_fat: [{ percentage: 24.0, time: '2026-09-22T05:31:12Z' }],
+  });
+  assert.equal(list.length, 2);
+  assert.equal(list[0]!.bodyFat, null);
+  assert.equal(list[1]!.bodyFat, 24);
 });
