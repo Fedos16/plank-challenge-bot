@@ -1,11 +1,18 @@
-import type { Challenge } from '@prisma/client';
+import type { Challenge, Workout } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { dayjs } from '../../lib/time';
 import { displayName } from '../users';
-import { classify, sessionIndex } from './counting';
+import { classify } from './counting';
 import { getGameState } from './evaluation';
 import { progressFor, type GoalType } from './goals';
-import { challengeInstants, loadWorkouts, rulesOf, toWorkoutDTO, type WorkoutDTO } from './workouts';
+import {
+  challengeInstants,
+  loadWorkouts,
+  rulesOf,
+  sessionToWorkoutDTO,
+  toWorkoutDTO,
+  type WorkoutDTO,
+} from './workouts';
 
 export interface FitnessLeaderboardRow {
   participationId: number;
@@ -107,17 +114,24 @@ export async function getFitnessFeed(ch: Challenge, meId: number): Promise<FeedI
   for (const p of participations) {
     const workouts = await loadWorkouts(p.userId, from, period.to);
     const { verdicts, sessions } = classify(workouts, rulesOf(ch));
-    const bySession = sessionIndex(sessions);
+    const byId = new Map(workouts.map((w) => [w.id, w]));
+    const isMe = p.userId === meId;
+    const name = displayName(p.user);
+    // заметка личная: мало ли что человек записал для себя
+    const withAuthor = (dto: WorkoutDTO): FeedItem => ({ ...dto, note: isMe ? dto.note : null, name, isMe });
+
+    // Занятие — одна строка, даже если источник разрезал его по видам активности
+    for (const session of sessions) {
+      const segments = session.workoutIds
+        .map((id) => byId.get(id))
+        .filter((w): w is Workout => w !== undefined);
+      const dto = sessionToWorkoutDTO(segments, session);
+      if (dto) items.push(withAuthor(dto));
+    }
+    // Снятые админом в сессии не входят, но в ленте видны: группа должна понимать, что
+    // случилось с тренировкой. Дубли не показываем — это та же тренировка из второго источника.
     for (const w of workouts) {
-      // чужие дубли в ленте — шум: это та же тренировка из второго источника
-      if (w.duplicateOfId !== null) continue;
-      items.push({
-        ...toWorkoutDTO(w, verdicts.get(w.id) ?? 'counted', bySession.get(w.id)),
-        // заметка личная: мало ли что человек записал для себя
-        note: p.userId === meId ? w.note : null,
-        name: displayName(p.user),
-        isMe: p.userId === meId,
-      });
+      if (verdicts.get(w.id) === 'excluded') items.push(withAuthor(toWorkoutDTO(w, 'excluded')));
     }
   }
   return items.sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, FEED_LIMIT);

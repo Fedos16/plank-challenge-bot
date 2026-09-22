@@ -107,6 +107,28 @@ export function toWorkoutDTO(w: Workout, verdict: Verdict, session?: Session): W
   };
 }
 
+/**
+ * Сессия одной строкой: разрезанное источником занятие в ленте должно выглядеть как одна
+ * тренировка. Длительность, калории и дистанция суммируются по сегментам, вид спорта берём
+ * у самого длинного из них, время — у первого.
+ */
+export function sessionToWorkoutDTO(items: Workout[], session: Session): WorkoutDTO | null {
+  const first = items[0];
+  if (!first) return null;
+  const main = items.reduce((a, b) => (b.durationSec > a.durationSec ? b : a), first);
+  const sum = (pick: (w: Workout) => number | null): number | null => {
+    const values = items.map(pick).filter((v): v is number => v !== null);
+    return values.length ? values.reduce((a, b) => a + b, 0) : null;
+  };
+  return {
+    ...toWorkoutDTO(main, session.verdict, session),
+    startedAt: first.startedAt.toISOString(),
+    durationMin: Math.round(session.durationSec / 60),
+    kcal: sum((w) => w.kcal),
+    distanceM: sum((w) => w.distanceM),
+  };
+}
+
 /** Период челленджа как моменты: от старта до конца (у бессрочного — до «сейчас плюс сутки»). */
 export function challengeInstants(ch: Challenge): { from: Date; to: Date } {
   const start = dateToDay(ch.startDate);
