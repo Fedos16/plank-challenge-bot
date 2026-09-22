@@ -11,6 +11,7 @@ import { ingestWorkouts } from '../services/fitness/ingest';
 import type { ExternalWorkout } from '../services/fitness/workouts';
 import { parseHaePayload } from '../services/parsers/hae';
 import { parseHealthConnectPayload } from '../services/parsers/healthConnect';
+import { parseHealthConnectBody } from '../services/parsers/healthConnectBody';
 
 /**
  * Выгрузка с телефона бывает тяжёлой: Health Auto Export кладёт в тренировку пульс по секундам
@@ -103,12 +104,28 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
       console.log(
         `[${provider}] пользователь=${hub.userId} в запросе=${workouts.length} новых=${saved.created.length} обновлено=${saved.updated.length}`,
       );
+
+      // Health Connect в той же выгрузке присылает состав тела (вес, жир, мышцы, вода) — это те же
+      // взвешивания, что и с openScale, только без второго токена и без отдельного приложения
+      let body = { received: 0, created: 0, updated: 0 };
+      if (provider === 'health_connect') {
+        const measurements = parseHealthConnectBody(req.body);
+        if (measurements.length > 0) {
+          const result = await saveMeasurements(hub.userId, measurements);
+          body = { received: measurements.length, created: result.created.length, updated: result.updated.length };
+          console.log(`[${provider}] пользователь=${hub.userId} взвешиваний=${measurements.length} новых=${result.created.length}`);
+          // Как и у весов: о пачке молчим, о свежем одиночном замере пишем в ЛС
+          if (result.created.length === 1 && measurements.length === 1) await notifyNewMeasurement(result.created[0]!);
+        }
+      }
+
       return {
         ok: true,
         received: workouts.length,
         created: saved.created.length,
         updated: saved.updated.length,
         skippedDeleted: saved.skippedDeleted,
+        body,
       };
     });
   }
