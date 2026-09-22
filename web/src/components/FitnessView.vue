@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { api } from '../api';
 import type { FitnessOverview } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { formatDateRu } from '../helpers';
+import { formatDateRu, weekdayShortRu } from '../helpers';
 import { GOAL_EMOJI, GOAL_LABEL, UNIT_LABEL, errorText, formatNum, hearts } from '../fitness';
 import GoalOnboarding from './GoalOnboarding.vue';
 import BodyTab from './BodyTab.vue';
@@ -86,6 +86,11 @@ const remaining = computed(() => {
 });
 
 /** Подпись под счётом недели: сколько осталось и сколько на это дней. */
+/** Прошедший день зачётного окна без тренировки: серый кружок с крестиком. */
+function dayMissed(d: { count: number; isToday: boolean; isFuture: boolean; inWindow: boolean }): boolean {
+  return d.inWindow && !d.isToday && !d.isFuture && d.count === 0;
+}
+
 const weekLabel = computed(() => {
   const week = data.value?.game.currentWeek;
   if (!week) return '';
@@ -181,13 +186,19 @@ watch(() => props.challengeId, load);
               <div class="num">{{ data.game.currentWeek.done }} из {{ data.game.currentWeek.required }}</div>
               <div class="lbl">{{ weekLabel }}</div>
               <div class="days">
-                <span
+                <div
                   v-for="d in data.game.currentWeek.days"
                   :key="d.day"
-                  class="day"
-                  :class="{ done: d.count > 0, today: d.isToday, off: !d.inWindow }"
+                  class="day-col"
+                  :class="{ today: d.isToday, off: !d.inWindow }"
                   :title="formatDateRu(d.day)"
-                >{{ d.count > 0 ? '✓' : '' }}</span>
+                >
+                  <span class="dow">{{ weekdayShortRu(d.day) }}</span>
+                  <span
+                    class="day"
+                    :class="{ done: d.count > 0, missed: dayMissed(d), today: d.isToday }"
+                  >{{ d.count > 0 ? '✓' : dayMissed(d) ? '×' : '' }}</span>
+                </div>
               </div>
             </template>
             <div v-else class="lbl">
@@ -392,8 +403,23 @@ watch(() => props.challengeId, load);
 .days {
   display: flex;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   margin-top: 12px;
+}
+.day-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.dow {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.75;
+}
+.day-col.today .dow {
+  opacity: 1;
+  font-weight: 800;
 }
 .day {
   width: 28px;
@@ -405,17 +431,28 @@ watch(() => props.challengeId, load);
   justify-content: center;
   font-size: 14px;
   font-weight: 800;
+  box-sizing: border-box;
 }
+/* тренировка была: зелёный кружок с галочкой */
 .day.done {
-  background: #fff;
-  border-color: #fff;
-  color: var(--accent);
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
 }
+/* прошедший день без тренировки: приглушённый серый, почти закрашенный, с бледным крестиком */
+.day.missed {
+  background: rgba(150, 150, 158, 0.85);
+  border-color: rgba(150, 150, 158, 0.85);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+}
+/* сегодня: заметная белая обводка поверх любого состояния */
 .day.today {
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+  border-color: #fff;
+  box-shadow: 0 0 0 2.5px #fff;
 }
 /* день до вступления: за него участник не отвечает */
-.day.off {
+.day-col.off {
   opacity: 0.3;
 }
 .week-mark {

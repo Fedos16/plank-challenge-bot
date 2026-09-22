@@ -39,13 +39,19 @@ export function initials(name: string): string {
   return (first + second).toUpperCase() || '🙂';
 }
 
+/** YYYY-MM-DD → «пн» */
+export function weekdayShortRu(iso: string): string {
+  if (!iso) return '';
+  const dt = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleDateString('ru-RU', { weekday: 'short' });
+}
+
 /** YYYY-MM-DD → «пн, 15.09.2026» */
 export function formatDayTitleRu(iso: string): string {
   if (!iso) return '';
-  const dt = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(dt.getTime())) return iso;
-  const weekday = dt.toLocaleDateString('ru-RU', { weekday: 'short' });
-  return `${weekday}, ${formatDateRu(iso)}`;
+  const weekday = weekdayShortRu(iso);
+  return weekday ? `${weekday}, ${formatDateRu(iso)}` : iso;
 }
 
 /** ISO-дата-время → ЧЧ:ММ */
