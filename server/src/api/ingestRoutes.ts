@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { notifyNewMeasurement, saveMeasurements, type WeightMeasurement } from '../services/weight';
 import { findHubByToken, touchHub, type HubProvider } from '../services/integrations';
 import { ingestWorkouts } from '../services/fitness/ingest';
+import { recordIngest, summarizeBody } from '../services/ingestLog';
 import type { ExternalWorkout } from '../services/fitness/workouts';
 import { parseHaePayload } from '../services/parsers/hae';
 import { parseHaeBody } from '../services/parsers/haeBody';
@@ -13,6 +14,13 @@ import { parseHealthConnectBody } from '../services/parsers/healthConnectBody';
  * и маршрут. Стандартного мегабайта Fastify не хватает — запрос отбивался бы с 413.
  */
 const HUB_BODY_LIMIT = 25 * 1024 * 1024;
+
+/** Размер тела запроса: телефон его сообщает, считать самим незачем — выгрузка бывает тяжёлой. */
+function bodyBytes(req: FastifyRequest): number {
+  const header = req.headers['content-length'];
+  const n = typeof header === 'string' ? Number(header) : Number.NaN;
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
 
 /**
  * Токен из запроса. Приложения-хабы шлют произвольный заголовок Authorization, поэтому
@@ -49,10 +57,21 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
   for (const [path, provider, parse, parseBody] of hubs) {
     app.post(path, { bodyLimit: HUB_BODY_LIMIT }, async (req, reply) => {
       const hub = await findHubByToken(extractToken(req), provider);
-      if (!hub) return reply.code(401).send({ error: 'unauthorized' });
+      if (!hub) {
+        // Чей это телефон — неизвестно, писать отказ в чей-то журнал нельзя: только в лог
+        console.warn(`[${provider}] отказ: токен не найден`);
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
+
+      const bytes = bodyBytes(req);
+      const summary = summarizeBody(provider, req.body);
 
       const workouts = parse(req.body);
-      if (!workouts) return reply.code(400).send({ error: 'bad_payload' });
+      if (!workouts) {
+        await recordIngest({ userId: hub.userId, provider, status: 'bad_payload', bytes, summary });
+        console.warn(`[${provider}] пользователь=${hub.userId} тело не распознано, байт=${bytes}`);
+        return reply.code(400).send({ error: 'bad_payload' });
+      }
 
       // Приложения шлют скользящее окно, поэтому одна тренировка приходит много раз —
       // сохранение идемпотентно, а удалённое пользователем не возвращается
@@ -75,6 +94,24 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
         // Как и у весов: о пачке молчим, о свежем одиночном замере пишем в ЛС
         if (result.created.length === 1 && measurements.length === 1) await notifyNewMeasurement(result.created[0]!);
       }
+
+      // Журнал переживает деплой, в отличие от логов контейнера: по нему потом видно,
+      // что именно прислал телефон и включены ли в приложении нужные галочки
+      await recordIngest({
+        userId: hub.userId,
+        provider,
+        status: 'ok',
+        bytes,
+        summary,
+        counts: {
+          workouts: workouts.length,
+          workoutsCreated: saved.created.length,
+          workoutsUpdated: saved.updated.length,
+          measurements: body.received,
+          measurementsCreated: body.created,
+          measurementsUpdated: body.updated,
+        },
+      });
 
       return {
         ok: true,

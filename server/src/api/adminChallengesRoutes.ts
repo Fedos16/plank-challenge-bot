@@ -20,6 +20,7 @@ import {
 } from '../services/fitness/evaluation';
 import { announceWeekResults } from '../services/fitness/fitnessReport';
 import { listWorkouts, setWorkoutExcluded, setWorkoutForceCounted } from '../services/fitness/workouts';
+import { listIngests } from '../services/ingestLog';
 
 /**
  * Админка челленджей по :id. Планка по-прежнему живёт в /api/admin/challenge (она одна и
@@ -203,6 +204,18 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
     const p = await prisma.participation.findFirst({ where: { id: pid, challengeId: ch.id } });
     if (!p) return reply.code(404).send({ error: 'participant_not_found' });
     return { workouts: await listWorkouts(ch, p.userId) };
+  });
+
+  // Последние выгрузки с телефона участника: что приёмник получил и что из этого сохранил
+  app.get('/:id/participants/:pid/syncs', async (req, reply) => {
+    const params = req.params as { id: string; pid: string };
+    const ch = await requireFitness(params.id, reply);
+    if (!ch) return;
+    const pid = parseId(params.pid, reply, 'bad_participation_id');
+    if (pid === null) return;
+    const p = await prisma.participation.findFirst({ where: { id: pid, challengeId: ch.id } });
+    if (!p) return reply.code(404).send({ error: 'participant_not_found' });
+    return { syncs: await listIngests(p.userId) };
   });
 
   // Снять тренировку с зачёта, вернуть её или засчитать вручную. Закрытую неделю это само

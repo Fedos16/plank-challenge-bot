@@ -476,6 +476,23 @@ export interface WorkoutInput {
   tzOffsetMin?: number;
 }
 
+/** Выгрузка с телефона: что приёмник получил и что из этого сохранил. */
+export interface IngestSync {
+  id: number;
+  provider: string;
+  at: string;
+  status: 'ok' | 'bad_payload';
+  bytes: number;
+  workouts: number;
+  workoutsCreated: number;
+  workoutsUpdated: number;
+  measurements: number;
+  measurementsCreated: number;
+  measurementsUpdated: number;
+  /** Что лежало в теле: имена метрик и длины массивов, без самих данных. */
+  summary: unknown;
+}
+
 export interface FitnessLeaderboardRow {
   participationId: number;
   name: string;

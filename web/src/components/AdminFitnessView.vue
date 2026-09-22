@@ -6,6 +6,7 @@ import type {
   AdminFitnessChallenge,
   AdminFitnessParticipant,
   AdminWeekRow,
+  IngestSync,
   Workout,
 } from '../types';
 import { confirmAction, haptic } from '../telegram';
@@ -140,6 +141,8 @@ const weeks = ref<{ weekNumber: number; rows: AdminWeekRow[] }[]>([]);
 /** Чьи тренировки сейчас раскрыты для модерации. */
 const moderating = ref<number | null>(null);
 const moderated = ref<Workout[]>([]);
+const syncsFor = ref<number | null>(null);
+const syncs = ref<IngestSync[]>([]);
 
 async function reloadGame() {
   const id = selectedId.value;
@@ -213,6 +216,38 @@ async function setExcluded(p: AdminFitnessParticipant, w: Workout, excluded: boo
     moderated.value = (await api.adminParticipantWorkouts(id, p.participationId)).workouts;
     await reloadGame();
   }, excluded ? 'Снята с зачёта' : 'Возвращена в зачёт');
+}
+
+/** Последние выгрузки с телефона: видно, что приехало и включены ли нужные галочки. */
+async function toggleSyncs(p: AdminFitnessParticipant) {
+  const id = selectedId.value;
+  if (!id) return;
+  if (syncsFor.value === p.participationId) {
+    syncsFor.value = null;
+    return;
+  }
+  await run(async () => {
+    syncs.value = (await api.adminParticipantSyncs(id, p.participationId)).syncs;
+    syncsFor.value = p.participationId;
+  }, '');
+}
+
+/** Короткая расшифровка сводки: что лежало в теле запроса. */
+function summaryText(sync: IngestSync): string {
+  const s = sync.summary as Record<string, unknown> | null;
+  if (!s || typeof s !== 'object') return '';
+  if (typeof s.shape === 'string') return String(s.shape);
+  const metrics = s.metrics as Record<string, number> | undefined;
+  if (metrics) {
+    const names = Object.keys(metrics);
+    return names.length ? 'метрики: ' + names.join(', ') : 'метрик нет';
+  }
+  const arrays = s.arrays as Record<string, number> | undefined;
+  if (arrays) {
+    const parts = Object.entries(arrays).map(([k, v]) => `${k}=${v}`);
+    return parts.length ? parts.join(' · ') : 'массивов нет';
+  }
+  return '';
 }
 
 /** Ручной зачёт: правило отсекло настоящую тренировку — короткую сессию или вторую за день. */
@@ -379,9 +414,35 @@ onMounted(async () => {
             <button class="btn small secondary" @click="toggleModeration(p)">
               {{ moderating === p.participationId ? 'Скрыть тренировки' : 'Тренировки' }}
             </button>
+            <button class="btn small secondary" @click="toggleSyncs(p)">
+              {{ syncsFor === p.participationId ? 'Скрыть выгрузки' : 'Выгрузки' }}
+            </button>
             <button v-if="p.lives.eliminated" class="btn small" @click="reinstate(p)">Вернуть в игру</button>
             <button v-if="p.status === 'active'" class="btn small secondary" @click="setStatus(p, 'left')">Убрать</button>
             <button v-else class="btn small secondary" @click="setStatus(p, 'active')">Вернуть в челлендж</button>
+          </div>
+
+          <!-- Журнал выгрузок: последние обращения телефона к приёмнику -->
+          <div v-if="syncsFor === p.participationId" class="moderation">
+            <div v-for="s in syncs" :key="s.id" class="list-item">
+              <div class="grow">
+                <div>
+                  {{ formatDateTimeRu(s.at) }} · {{ SOURCE_LABEL[s.provider] ?? s.provider }}
+                  <span v-if="s.status !== 'ok'" class="muted">· тело не распознано</span>
+                </div>
+                <div class="muted">
+                  тренировок {{ s.workouts }} (новых {{ s.workoutsCreated }}) ·
+                  взвешиваний {{ s.measurements }} (новых {{ s.measurementsCreated }}) ·
+                  {{ Math.round(s.bytes / 1024) }} КБ
+                </div>
+                <div v-if="summaryText(s)" class="muted">{{ summaryText(s) }}</div>
+              </div>
+            </div>
+            <div v-if="!syncs.length" class="muted">Телефон ещё ничего не присылал.</div>
+            <div class="muted" style="margin-top: 6px">
+              Храним последние 10 выгрузок по каждому хабу. Если взвешиваний всегда ноль,
+              а в сводке нет метрик веса — в приложении на телефоне не отмечены нужные галочки.
+            </div>
           </div>
 
           <!-- Модерация: снять тренировку с зачёта («фейк» в планке) или засчитать вручную -->

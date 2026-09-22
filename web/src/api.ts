@@ -18,6 +18,7 @@ import type {
   FoodProductInput,
   FreezeOverview,
   GoalInput,
+  IngestSync,
   HubInfo,
   HubProvider,
   IntegrationsResponse,
@@ -184,6 +185,8 @@ export const api = {
     ),
   adminParticipantWorkouts: (id: number, participationId: number) =>
     request<{ workouts: Workout[] }>(`/admin/challenges/${id}/participants/${participationId}/workouts`),
+  adminParticipantSyncs: (id: number, participationId: number) =>
+    request<{ syncs: IngestSync[] }>(`/admin/challenges/${id}/participants/${participationId}/syncs`),
   adminExcludeWorkout: (id: number, workoutId: number, excluded: boolean, note?: string) =>
     request<{ ok: boolean }>(`/admin/challenges/${id}/workouts/${workoutId}`, {
       method: 'PATCH',

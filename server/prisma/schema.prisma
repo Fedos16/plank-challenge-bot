@@ -26,6 +26,7 @@ model User {
   workouts           Workout[]
   integrations       Integration[]
   foodEntries        FoodEntry[]
+  ingestLogs         IngestLog[]
 }
 
 // Челлендж (например «Планка каждый день»). Все настройки редактируются в админке.
@@ -310,6 +311,34 @@ model BodyMeasurement {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, day, kind])
+}
+
+// Журнал выгрузок с телефона: что приёмник получил от хаба в последние разы. Нужен, чтобы
+// разобраться, почему у человека не появляются тренировки или вес, не читая логи контейнера
+// (они живут только до следующего деплоя). Храним последние выгрузки по каждому хабу.
+model IngestLog {
+  id       Int      @id @default(autoincrement())
+  userId   Int
+  provider String // hae | health_connect
+  at       DateTime @default(now())
+  status   String // ok | bad_payload
+  /// Размер тела запроса: по нему видно, шлёт ли телефон вообще что-нибудь
+  bytes    Int      @default(0)
+
+  workouts            Int @default(0) // в запросе
+  workoutsCreated     Int @default(0)
+  workoutsUpdated     Int @default(0)
+  measurements        Int @default(0) // взвешиваний в запросе
+  measurementsCreated Int @default(0)
+  measurementsUpdated Int @default(0)
+
+  /// Что лежало в теле: имена метрик и длины массивов. По ним видно, включены ли в приложении
+  /// нужные галочки, — сами данные не храним
+  summary Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider, at])
 }
 
 // Тренировка. Принадлежит пользователю, а не участию: одна и та же пробежка идёт в зачёт

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mapHaeWorkout, parseHaeDate, parseHaePayload } from '../src/services/parsers/hae';
 import { parseHealthConnectPayload } from '../src/services/parsers/healthConnect';
+import { summarizeBody } from '../src/services/ingestLog';
 import { parseHaeBody } from '../src/services/parsers/haeBody';
 import { parseHealthConnectBody } from '../src/services/parsers/healthConnectBody';
 
@@ -246,4 +247,36 @@ test('parseHaeBody: без веса взвешивания нет, тренир�
   assert.deepEqual(parseHaeBody({ data: { metrics: [metric('body_fat_percentage', '%', 24.1)] } }), []);
   assert.deepEqual(parseHaeBody({ data: { workouts: [HAE_V2] } }), []);
   assert.deepEqual(parseHaeBody({}), []);
+});
+
+// ---------- Журнал выгрузок ----------
+
+test('summarizeBody: у Apple Health видно тренировки и какие метрики включены', () => {
+  const summary = summarizeBody('hae', {
+    data: {
+      workouts: [HAE_V2, HAE_V2],
+      metrics: [metric('weight_body_mass', 'kg', 84.3), metric('step_count', 'count', 8500)],
+    },
+  }) as any;
+
+  assert.equal(summary.workouts, 2);
+  assert.equal(summary.metricsTotal, 2);
+  // по именам метрик видно, отметил ли человек вес в приложении
+  assert.deepEqual(summary.metrics, { weight_body_mass: 1, step_count: 1 });
+});
+
+test('summarizeBody: у Health Connect видно длины массивов в корне', () => {
+  const summary = summarizeBody('health_connect', {
+    exercise: [{}, {}, {}],
+    weight: [{ kilograms: 84.3 }],
+    body_fat: [],
+    timestamp: '2026-09-22T05:35:00Z', // не массив — в сводку не идёт
+  }) as any;
+
+  assert.deepEqual(summary.arrays, { exercise: 3, weight: 1, body_fat: 0 });
+});
+
+test('summarizeBody: мусор вместо тела не роняет сводку', () => {
+  assert.deepEqual(summarizeBody('hae', 'строка') as any, { shape: 'не объект' });
+  assert.deepEqual(summarizeBody('hae', { nope: 1 }) as any, { shape: 'нет поля data' });
 });
