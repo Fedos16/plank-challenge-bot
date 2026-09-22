@@ -169,7 +169,6 @@ test('parseHealthConnectBody: вес, жир, мышцы и вода одног�
   assert.equal(m.bodyFat, 30.5);
   assert.equal(m.muscle, 69.5); // 79.14 / 113.92 — база хранит долю, а не килограммы
   assert.equal(m.water, 49.3);
-  assert.equal(m.scaleUserId, null); // пишется владельцу токена без профилей openScale
 });
 
 test('parseHealthConnectBody: без веса взвешивания нет, тренировочная выгрузка — не ошибка', () => {
@@ -227,7 +226,6 @@ test('parseHaeBody: вес, жир и мышцы одного взвешиван
   assert.equal(m.bodyFat, 24.1);
   assert.equal(m.muscle, 75.8); // 63.9 / 84.3 — база хранит долю, а не килограммы
   assert.equal(m.water, null); // процента воды в HealthKit нет
-  assert.equal(m.scaleUserId, null); // пишется владельцу токена без профилей openScale
 });
 
 test('parseHaeBody: фунты переводятся в килограммы', () => {

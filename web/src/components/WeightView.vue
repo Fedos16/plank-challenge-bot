@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../api';
-import type { ScaleProfile, WeightOverview, WeightPoint } from '../types';
-import { confirmAction, haptic } from '../telegram';
+import type { WeightOverview, WeightPoint } from '../types';
+import { confirmAction } from '../telegram';
 import { formatDateRu, formatTimeRu } from '../helpers';
 
 const props = defineProps<{ challengeId: number }>();
@@ -11,16 +11,11 @@ const emit = defineEmits<{ (e: 'back'): void; (e: 'left'): void }>();
 const data = ref<WeightOverview | null>(null);
 const loading = ref(true);
 const busy = ref(false);
-const copied = ref<string | null>(null);
-const setupOpen = ref(false);
 
 async function load() {
   loading.value = true;
   try {
-    const overview = await api.getWeight();
-    data.value = overview;
-    // Пока ни одного взвешивания — сразу показываем инструкцию подключения
-    setupOpen.value = !overview.connection.configured;
+    data.value = await api.getWeight();
   } finally {
     loading.value = false;
   }
@@ -70,44 +65,6 @@ const chart = computed(() => {
 
 /** История для списка — сверху свежее. */
 const recent = computed<WeightPoint[]>(() => [...(data.value?.history ?? [])].reverse().slice(0, 30));
-
-async function copy(text: string, what: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    copied.value = what;
-    haptic('success');
-    setTimeout(() => (copied.value = null), 2000);
-  } catch {
-    haptic('error');
-  }
-}
-
-async function rotateToken() {
-  const ok = await confirmAction('Выпустить новый токен? Телефон перестанет отправлять данные, пока не впишете новый.');
-  if (!ok || busy.value) return;
-  busy.value = true;
-  try {
-    data.value = await api.rotateWeightToken();
-    haptic('success');
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function assignProfile(profile: ScaleProfile, event: Event) {
-  const targetUserId = Number((event.target as HTMLSelectElement).value);
-  if (!Number.isInteger(targetUserId) || busy.value) return;
-  busy.value = true;
-  try {
-    data.value = await api.setWeightProfile(profile.id, targetUserId);
-    haptic('success');
-  } catch {
-    haptic('error');
-    await load();
-  } finally {
-    busy.value = false;
-  }
-}
 
 async function removeEntry(id: number) {
   const ok = await confirmAction('Удалить это взвешивание?');
@@ -230,92 +187,22 @@ onMounted(load);
       </div>
     </div>
 
-    <!-- Раскладка профилей: телефон один, людей несколько -->
-    <div v-if="data.profiles.length > 1" class="card">
-      <h3>Кто на весах</h3>
-      <div class="muted">
-        openScale прислал с этого телефона несколько профилей. Укажите, чьи это взвешивания —
-        история переедет вместе с профилем.
-      </div>
-      <div v-for="p in data.profiles" :key="p.id" class="scale-profile">
-        <div class="grow">
-          <div class="name">{{ p.scaleUsername || 'Профиль #' + p.scaleUserId }}</div>
-          <div class="meta">
-            {{ p.entries }} записей
-            <template v-if="p.lastWeightKg"> · последний {{ formatKg(p.lastWeightKg) }} кг</template>
-          </div>
-        </div>
-        <select :value="p.targetUserId" :disabled="busy" @change="assignProfile(p, $event)">
-          <option v-for="c in data.candidates" :key="c.userId" :value="c.userId">
-            {{ c.name }}
-          </option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Подключение весов -->
+    <!-- Откуда берётся вес -->
     <div class="card">
-      <div class="setup-head" @click="setupOpen = !setupOpen">
-        <h3 style="margin: 0">Подключение весов</h3>
-        <span class="muted">{{ setupOpen ? '▲' : '▼' }}</span>
+      <h3>Откуда берётся вес</h3>
+      <div class="muted">
+        Умные весы пишут вес и состав тела в хранилище здоровья телефона, а приложение-хаб
+        пересылает их сюда вместе с тренировками. Настраивается один раз в разделе
+        «Подключения» фитнес-челленджа — отдельный адрес и токен для весов больше не нужны.
       </div>
-
-      <template v-if="setupOpen">
-        <div v-if="!data.connection.webhookUrl" class="error-text" style="margin-top: 10px">
-          Не задан публичный адрес приложения (WEBAPP_URL) — вебхук принимать некуда.
-        </div>
-
-        <ol class="steps">
-          <li>
-            Поставьте на Android <b>openScale</b> и <b>openScale sync</b> — оба есть в F-Droid.
-          </li>
-          <li>
-            В openScale заведите пользователя (пол, рост, возраст — без них не посчитается состав
-            тела) и добавьте весы <b>Mi Body Composition Scale 2</b>.
-          </li>
-          <li>
-            В openScale sync включите <b>Webhook</b> и впишите адрес и заголовок из полей ниже.
-          </li>
-          <li>Встаньте на весы — телефон рядом, Bluetooth включён. Данные придут сюда сами.</li>
-        </ol>
-
-        <div class="muted">
-          Токен привязан к телефону, а не к человеку на весах. Если в openScale заведено
-          несколько профилей, они появятся в карточке «Кто на весах» — там и укажете, кому
-          какие взвешивания отдавать.
-        </div>
-
-        <div class="field">
-          <div class="field-label">Webhook URL</div>
-          <div class="field-value">{{ data.connection.webhookUrl || '—' }}</div>
-          <button
-            class="btn small"
-            :disabled="!data.connection.webhookUrl"
-            @click="copy(data.connection.webhookUrl, 'url')"
-          >
-            {{ copied === 'url' ? 'Скопировано' : 'Скопировать' }}
-          </button>
-        </div>
-
-        <div class="field">
-          <div class="field-label">Authorization header</div>
-          <div class="field-value secret">Bearer {{ data.connection.token }}</div>
-          <button class="btn small" @click="copy('Bearer ' + data.connection.token, 'token')">
-            {{ copied === 'token' ? 'Скопировано' : 'Скопировать' }}
-          </button>
-        </div>
-
-        <div class="muted" style="margin-top: 10px">
-          Токен — это пароль от ваших данных. Никому не показывайте; если засветили — выпустите новый.
-        </div>
-        <button class="btn danger small" style="margin-top: 10px" :disabled="busy" @click="rotateToken">
-          Новый токен
-        </button>
-      </template>
+      <div class="muted" style="margin-top: 8px">
+        Если весы так не умеют, взвешивание можно внести вручную на вкладке «Тело».
+      </div>
     </div>
-    <div v-if="data.candidates.length" class="card">
+
+    <div v-if="data.members.length" class="card">
       <h3>Кто в группе</h3>
-      <div v-for="c in data.candidates" :key="c.userId" class="row">
+      <div v-for="c in data.members" :key="c.userId" class="row">
         <div class="name">{{ c.name }}</div>
       </div>
       <div class="muted" style="margin-top: 8px">
@@ -372,64 +259,5 @@ onMounted(load);
   cursor: pointer;
   font-size: 13px;
   padding: 0 0 0 10px;
-}
-.scale-profile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
-}
-.scale-profile:last-child {
-  border-bottom: none;
-}
-.scale-profile .grow {
-  flex: 1;
-  min-width: 0;
-}
-.scale-profile .name {
-  font-weight: 600;
-}
-.scale-profile .meta {
-  font-size: 12px;
-  color: var(--hint);
-}
-.scale-profile select {
-  max-width: 45%;
-}
-.setup-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-}
-.steps {
-  margin: 10px 0 14px;
-  padding-left: 20px;
-  font-size: 14px;
-  line-height: 1.5;
-}
-.steps li {
-  margin-bottom: 6px;
-}
-.field {
-  margin-top: 12px;
-}
-.field-label {
-  font-size: 12px;
-  color: var(--hint);
-  margin-bottom: 4px;
-}
-.field-value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  word-break: break-all;
-  background: rgba(128, 128, 128, 0.12);
-  border-radius: 10px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-}
-.field .btn.small {
-  width: auto;
 }
 </style>

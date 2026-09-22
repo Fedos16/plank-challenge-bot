@@ -1,11 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { parseScaleWebhook, type ScaleMeasurement } from '../services/openscale';
-import {
-  deleteMeasurement,
-  findUserByScaleToken,
-  notifyNewMeasurement,
-  saveMeasurements,
-} from '../services/weight';
+import { notifyNewMeasurement, saveMeasurements, type WeightMeasurement } from '../services/weight';
 import { findHubByToken, touchHub, type HubProvider } from '../services/integrations';
 import { ingestWorkouts } from '../services/fitness/ingest';
 import type { ExternalWorkout } from '../services/fitness/workouts';
@@ -21,76 +15,32 @@ import { parseHealthConnectBody } from '../services/parsers/healthConnectBody';
 const HUB_BODY_LIMIT = 25 * 1024 * 1024;
 
 /**
- * Токен из запроса. openScale sync умеет слать произвольный заголовок Authorization,
- * поэтому принимаем и «Bearer xxx», и голый токен; query-параметр — на случай клиента,
- * который заголовки задавать не умеет.
+ * Токен из запроса. Приложения-хабы шлют произвольный заголовок Authorization, поэтому
+ * принимаем и «Bearer xxx», и голый токен; query-параметр — на случай клиента, который
+ * заголовки задавать не умеет.
  */
 function extractToken(req: FastifyRequest): string {
   const auth = req.headers.authorization;
   if (typeof auth === 'string' && auth.trim()) {
     return auth.replace(/^Bearer\s+/i, '').trim();
   }
-  for (const name of ['x-scale-token', 'x-ingest-token']) {
-    const header = req.headers[name];
-    if (typeof header === 'string' && header.trim()) return header.trim();
-  }
+  const header = req.headers['x-ingest-token'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
   const query = (req.query as { token?: string } | undefined)?.token;
   return typeof query === 'string' ? query.trim() : '';
 }
 
 /**
- * Приём данных с умных весов. Авторизация — личный токен пользователя, а не Telegram:
- * запрос идёт с телефона, а не из Web App, поэтому роуты вынесены из userRoutes.
- *
- * Токен привязан к телефону. Если в openScale заведено несколько людей, взвешивания
- * раскладываются по профилям, которые владелец сопоставляет участникам в кабинете.
+ * Приём данных с телефона: тренировки и взвешивания. Авторизация — личный токен участника,
+ * а не Telegram: запрос идёт с телефона, а не из Web App, поэтому роуты вынесены из userRoutes.
  */
 export async function ingestRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/openscale', async (req, reply) => {
-    const owner = await findUserByScaleToken(extractToken(req));
-    if (!owner) return reply.code(401).send({ error: 'unauthorized' });
-
-    const event = parseScaleWebhook(req.body);
-    if (!event) return reply.code(400).send({ error: 'bad_payload' });
-
-    switch (event.kind) {
-      // Кнопка «Проверить соединение» в приложении — отвечаем 200, ничего не пишем.
-      case 'test':
-        return { ok: true };
-
-      case 'upsert': {
-        const { created, updated } = await saveMeasurements(owner.id, event.measurements);
-        console.log(
-          `[scale] телефон=${owner.id} новых=${created.length} обновлено=${updated.length}`,
-        );
-        // О пачке молчим: так приходит первая выгрузка всей истории из openScale.
-        const single = created.length === 1 && event.measurements.length === 1;
-        if (single) await notifyNewMeasurement(created[0]!);
-        return { ok: true, created: created.length, updated: updated.length };
-      }
-
-      case 'delete': {
-        const deleted = await deleteMeasurement(owner.id, event.scaleUserId, event.measuredAt);
-        return { ok: true, deleted };
-      }
-
-      // «Очистить всё» в openScale не должно стирать историю здесь — это не отменяемо,
-      // а приложение шлёт clear и при смене пользователя на телефоне.
-      case 'clear':
-        console.warn(`[scale] телефон=${owner.id} прислал clear — историю не трогаем`);
-        return { ok: true, ignored: 'clear' };
-
-      default:
-        return { ok: true, ignored: event.event };
-    }
-  });
-
   // ---- Тренировки и состав тела с телефонных хабов ----
   type HubParsers = [
     string,
     HubProvider,
     (body: unknown) => ExternalWorkout[] | null,
-    (body: unknown) => ScaleMeasurement[],
+    (body: unknown) => WeightMeasurement[],
   ];
   const hubs: HubParsers[] = [
     ['/health-auto-export', 'hae', parseHaePayload, parseHaeBody],
@@ -112,8 +62,8 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
         `[${provider}] пользователь=${hub.userId} в запросе=${workouts.length} новых=${saved.created.length} обновлено=${saved.updated.length}`,
       );
 
-      // Оба хаба в той же выгрузке присылают состав тела (вес, жир, мышцы, вода) — это те же
-      // взвешивания, что и с openScale, только без второго токена и без отдельного приложения
+      // Оба хаба в той же выгрузке присылают состав тела: вес, жир, мышцы и воду пишут туда
+      // умные весы со своим приложением, отдельный приёмник для них не нужен
       let body = { received: 0, created: 0, updated: 0 };
       const measurements = parseBody(req.body);
       if (measurements.length > 0) {

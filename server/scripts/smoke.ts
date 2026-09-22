@@ -93,95 +93,13 @@ async function main() {
     console.log('вес-челлендж: не найден, выполните npm run prisma:seed');
   }
 
-  // --- умные весы: вебхук openScale ---
-  const w0 = await jget(`${base}/api/weight`);
-  const scaleToken: string = w0.connection.token;
-  // дата «два дня назад»: старое измерение не дёргает отправку в ЛС
-  const measuredAt = new Date(Date.now() - 2 * 86400000).toISOString();
-  const scaleHeaders = { Authorization: `Bearer ${scaleToken}`, 'Content-Type': 'application/json' };
-  const scalePost = async (body: unknown) => {
-    const res = await fetch(`${base}/api/ingest/openscale`, {
-      method: 'POST',
-      headers: scaleHeaders,
-      body: JSON.stringify(body),
-    });
-    return { status: res.status, body: (await res.json()) as any };
-  };
-
-  const ins = await scalePost({
-    event: 'insert',
-    id: 1,
-    userId: 1,
-    username: 'Smoke',
-    date: measuredAt,
-    weight: 78.4,
-    body_fat: 18.2,
-    water: 55.1,
-    muscle: 42,
+  // --- вес: ручной ввод (взвешивания с телефона проверяет сценарий хабов) ---
+  const w1 = await jpost(`${base}/api/weight`, {
+    weightKg: 78.4,
+    bodyFat: 18.2,
+    measuredAt: new Date(Date.now() - 2 * 86400000).toISOString(),
   });
-  // то же взвешивание второй раз — должно обновиться, а не задвоиться
-  const again = await scalePost({ event: 'update', id: 1, userId: 1, date: measuredAt, weight: 78.6 });
-  const w1 = await jget(`${base}/api/weight`);
-  console.log(
-    'scale: создано=', ins.body.created,
-    '| повтор обновил=', again.body.updated,
-    '| вес=', w1.latest?.weightKg,
-    '| записей=', w1.stats.count,
-  );
-
-  // второй человек на тех же весах: openScale шлёт его под своим userId
-  const measuredAt2 = new Date(Date.now() - 2 * 86400000 + 600000).toISOString();
-  await scalePost({
-    event: 'insert',
-    id: 2,
-    userId: 2,
-    username: 'Смоук-второй',
-    date: measuredAt2,
-    weight: 63.4,
-    body_fat: 24.1,
-  });
-  const w15 = await jget(`${base}/api/weight`);
-  const myUserId: number | undefined = w15.profiles[0]?.targetUserId;
-  console.log(
-    'scale: профилей на телефоне=', w15.profiles.length,
-    '| записей у владельца=', w15.stats.count,
-    '| кандидатов=', w15.candidates.length,
-  );
-
-  const second = w15.profiles.find((p: any) => p.scaleUserId === 2);
-  const other = w15.candidates.find((c: any) => c.userId !== myUserId);
-  if (second && other) {
-    const res = await fetch(`${base}/api/weight/profiles/${second.id}`, {
-      method: 'PATCH',
-      headers: HEADERS,
-      body: JSON.stringify({ targetUserId: other.userId }),
-    });
-    const assigned = (await res.json()) as any;
-    console.log(
-      'scale: профиль отдан участнику', other.name,
-      '| переехало записей=', assigned.moved,
-      '| осталось у владельца=', assigned.stats.count,
-    );
-  } else {
-    console.log('scale: отдать профиль некому — в челлендже один участник');
-  }
-
-  const foreign = await fetch(`${base}/api/ingest/openscale`, {
-    method: 'POST',
-    // только ASCII: fetch в Node отвергает кириллицу в значении заголовка ещё до отправки
-    headers: { Authorization: 'Bearer no-such-token', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event: 'test' }),
-  });
-  console.log('scale: чужой токен ->', foreign.status, '(ожидаем 401)');
-
-  const cleared = await scalePost({ event: 'clear', userId: 1 });
-  const del = await scalePost({ event: 'delete', userId: 1, date: measuredAt });
-  const w2 = await jget(`${base}/api/weight`);
-  console.log(
-    'scale: clear проигнорирован=', cleared.body.ignored === 'clear',
-    '| удалено=', del.body.deleted,
-    '| осталось записей=', w2.stats.count,
-  );
+  console.log('вес: ручная запись -> последний=', w1.latest?.weightKg, '| записей=', w1.stats?.count);
 
   await fitnessScenario(base);
   await gameScenario(base);

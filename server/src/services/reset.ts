@@ -15,7 +15,6 @@ const ORPHAN_USER: Prisma.UserWhereInput = {
   integrations: { none: {} },
   foodEntries: { none: {} },
   bodyProfile: { is: null },
-  scaleProfiles: { none: {} },
   personalChallenges: { none: {} },
 };
 

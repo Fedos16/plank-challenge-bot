@@ -20,13 +20,7 @@ import {
   getPersonalDetail,
   listPersonal,
 } from '../services/personal';
-import {
-  addManualWeight,
-  assignProfile,
-  deleteEntry,
-  getWeightOverview,
-  rotateScaleToken,
-} from '../services/weight';
+import { addManualWeight, deleteEntry, getWeightOverview } from '../services/weight';
 import {
   challengeTimeline,
   getChallengeById,
@@ -256,10 +250,10 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  // ---- Вес с умных весов (только владелец) ----
+  // ---- Вес и состав тела ----
   app.get('/weight', async (req) => getWeightOverview(req.ctx!.user.id));
 
-  // Взвешивание вручную — для тех, у кого нет умных весов
+  // Взвешивание вручную — для тех, у кого весы не пишут в хранилище здоровья телефона
   app.post('/weight', async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const num = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v));
@@ -275,29 +269,6 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     });
     if (typeof result === 'string') return reply.code(400).send({ error: result });
     return getWeightOverview(req.ctx!.user.id);
-  });
-
-  // Перевыпуск токена: старый адрес вебхука сразу перестаёт приниматься
-  app.post('/weight/token', async (req) => {
-    await rotateScaleToken(req.ctx!.user.id);
-    return getWeightOverview(req.ctx!.user.id);
-  });
-
-  // Чей это профиль весов: null — мой, иначе участник общего челленджа.
-  // Вместе с профилем к нему переезжает и уже накопленная история.
-  app.patch('/weight/profiles/:id', async (req, reply) => {
-    const id = Number((req.params as { id: string }).id);
-    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
-    const body = (req.body ?? {}) as { targetUserId?: number | null };
-    const raw = body.targetUserId;
-    const target = raw === null || raw === undefined ? null : Math.trunc(Number(raw));
-    if (target !== null && (!Number.isInteger(target) || target <= 0)) {
-      return reply.code(400).send({ error: 'bad_target' });
-    }
-    const result = await assignProfile(req.ctx!.user.id, id, target);
-    if (!result.ok) return reply.code(400).send({ error: result.error });
-    const overview = await getWeightOverview(req.ctx!.user.id);
-    return { ...overview, moved: result.moved, skipped: result.skipped };
   });
 
   app.delete('/weight/:id', async (req, reply) => {

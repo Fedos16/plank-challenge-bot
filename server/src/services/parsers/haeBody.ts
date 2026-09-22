@@ -1,4 +1,4 @@
-import type { ScaleMeasurement } from '../openscale';
+import type { WeightMeasurement } from '../weight';
 import { parseHaeDate } from './hae';
 
 /**
@@ -45,7 +45,7 @@ function toKg(value: number, units: string): number | null {
   return null;
 }
 
-/** Метрика состава тела в процентах: 0 и мусор → null, как у openScale. */
+/** Метрика состава тела в процентах: 0 и мусор → null. */
 function percent(value: number | null): number | null {
   if (value === null || value <= 0 || value > 100) return null;
   return Math.round(value * 10) / 10;
@@ -118,7 +118,7 @@ function fatPercent(value: number | null): number | null {
  * Метрики выгрузки → взвешивания. Возвращает [] если веса в теле нет: выгрузка одних
  * тренировок или шагов — штатный запрос, ошибкой это не считаем.
  */
-export function parseHaeBody(body: unknown): ScaleMeasurement[] {
+export function parseHaeBody(body: unknown): WeightMeasurement[] {
   const metrics = metricsOf(body);
   const weight = metrics.get('weight_body_mass') ?? metrics.get('body_mass');
   if (!weight) return [];
@@ -126,7 +126,7 @@ export function parseHaeBody(body: unknown): ScaleMeasurement[] {
   const fat = metrics.get('body_fat_percentage');
   const lean = metrics.get('lean_body_mass');
 
-  const result: ScaleMeasurement[] = [];
+  const result: WeightMeasurement[] = [];
   for (const point of weight.points) {
     const kg = toKg(point.value, weight.units);
     if (kg === null || kg <= 0 || kg > 500) continue;
@@ -136,10 +136,7 @@ export function parseHaeBody(body: unknown): ScaleMeasurement[] {
     const leanKg = leanRaw === null ? null : toKg(leanRaw, lean?.units ?? '');
 
     result.push({
-      // id у точки нет; момент взвешивания между выгрузками не меняется — по нему сервер и дедуплицирует
-      scaleEntryId: null,
-      scaleUserId: null,
-      scaleUsername: null,
+      // момент взвешивания между выгрузками не меняется — по нему сервер и дедуплицирует
       measuredAt: new Date(point.at),
       weightKg,
       bodyFat: fatPercent(nearest(fat, point.at)),

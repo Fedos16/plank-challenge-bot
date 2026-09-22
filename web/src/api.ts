@@ -120,15 +120,8 @@ export const api = {
 
   // --- вес с умных весов ---
   getWeight: () => request<WeightOverview>('/weight'),
-  rotateWeightToken: () => request<WeightOverview>('/weight/token', { method: 'POST' }),
   deleteWeightEntry: (id: number) =>
     request<{ ok: boolean }>('/weight/' + id, { method: 'DELETE' }),
-  setWeightProfile: (id: number, targetUserId: number | null) =>
-    request<WeightOverview>('/weight/profiles/' + id, {
-      method: 'PATCH',
-      body: JSON.stringify({ targetUserId }),
-    }),
-
   addManualWeight: (data: ManualWeightInput) =>
     request<WeightOverview>('/weight', { method: 'POST', body: JSON.stringify(data) }),
 

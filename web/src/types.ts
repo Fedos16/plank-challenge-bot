@@ -302,31 +302,19 @@ export interface WeightPoint {
   weightKg: number;
   bodyFat: number | null;
   water: number | null;
-  /** Доля мышц, % — так присылают весы. */
+  /** Доля мышц, % — так её отдаёт хранилище здоровья. */
   muscle: number | null;
   /** Та же величина массой: вес × доля. */
   muscleKg: number | null;
 }
 
-export interface ScaleProfile {
-  id: number;
-  scaleUserId: number;
-  scaleUsername: string | null;
-  targetUserId: number;
-  targetName: string;
-  entries: number;
-  lastWeightKg: number | null;
-  lastSeenAt: string;
-}
-
 export interface WeightOverview {
-  connection: { webhookUrl: string; token: string; configured: boolean };
   latest: WeightPoint | null;
   deltas: { week: number | null; month: number | null; total: number | null };
   stats: { count: number; min: number | null; max: number | null; firstDay: string | null };
   history: WeightPoint[];
-  profiles: ScaleProfile[];
-  candidates: { userId: number; name: string }[];
+  /** Кто ещё в группе: цифры у каждого свои, видно только имена. */
+  members: { userId: number; name: string }[];
 }
 
 // ---------- Фитнес-челлендж ----------

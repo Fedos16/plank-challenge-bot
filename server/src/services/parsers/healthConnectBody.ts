@@ -1,4 +1,4 @@
-import type { ScaleMeasurement } from '../openscale';
+import type { WeightMeasurement } from '../weight';
 
 /**
  * Health Connect Webhook (Android) → взвешивания. Кроме тренировок приложение умеет слать
@@ -12,7 +12,7 @@ import type { ScaleMeasurement } from '../openscale';
  *
  * Одно взвешивание — несколько точек с одним временем (у некоторых весов расходятся на секунды),
  * поэтому склеиваем по окну. Без веса точка бесполезна: жир и мышцы без веса не сохраняем —
- * `WeightEntry` требует килограммы, и так же ведёт себя openScale.
+ * `WeightEntry` требует килограммы.
  *
  * Мышцы и вода в базе лежат долей от веса, а Health Connect отдаёт их массой — пересчитываем
  * через вес того же взвешивания. Так работает и ручной ввод в килограммах.
@@ -32,7 +32,7 @@ function finite(v: unknown): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
-/** Метрика состава тела в процентах: 0 и мусор → null, как у openScale. */
+/** Метрика состава тела в процентах: 0 и мусор → null. */
 function percent(value: number | null): number | null {
   if (value === null || value <= 0 || value > 100) return null;
   return Math.round(value * 10) / 10;
@@ -71,7 +71,7 @@ function nearest(list: Point[], at: number): number | null {
  * Массивы состава тела из выгрузки → взвешивания. Возвращает [] если в теле нет веса:
  * выгрузка одних тренировок — штатный запрос, ошибкой это не считаем.
  */
-export function parseHealthConnectBody(body: unknown): ScaleMeasurement[] {
+export function parseHealthConnectBody(body: unknown): WeightMeasurement[] {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return [];
   const b = body as Record<string, unknown>;
 
@@ -81,17 +81,14 @@ export function parseHealthConnectBody(body: unknown): ScaleMeasurement[] {
   const lean = points(b.lean_body_mass, 'kilograms');
   const water = points(b.body_water_mass, 'kilograms');
 
-  const result: ScaleMeasurement[] = [];
+  const result: WeightMeasurement[] = [];
   for (const w of weights) {
     if (w.value > 500) continue;
     const weightKg = Math.round(w.value * 100) / 100;
     const leanKg = nearest(lean, w.at);
     const waterKg = nearest(water, w.at);
     result.push({
-      // id у точки нет; момент взвешивания между выгрузками не меняется — по нему сервер и дедуплицирует
-      scaleEntryId: null,
-      scaleUserId: null,
-      scaleUsername: null,
+      // момент взвешивания между выгрузками не меняется — по нему сервер и дедуплицирует
       measuredAt: new Date(w.at),
       weightKg,
       bodyFat: percent(nearest(fat, w.at)),

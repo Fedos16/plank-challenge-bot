@@ -22,7 +22,7 @@ export const SEXES = ['male', 'female'] as const;
 export type Sex = (typeof SEXES)[number];
 
 /**
- * В чём считать мышцы. Весы и openScale дают долю, Zepp и Mi Fitness показывают массу —
+ * В чём считать мышцы. Хранилище здоровья отдаёт долю, Zepp и Mi Fitness показывают массу —
  * и для цели «набрать мышцы» масса честнее: на сушке доля растёт сама, без грамма новых мышц.
  */
 export const MUSCLE_UNITS = ['kg', 'percent'] as const;
