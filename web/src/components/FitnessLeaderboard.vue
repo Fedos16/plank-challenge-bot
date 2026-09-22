@@ -13,6 +13,7 @@ import {
   errorText,
   formatNum,
   hearts,
+  sessionTitle,
   sportTitle,
 } from '../fitness';
 
@@ -113,8 +114,7 @@ onMounted(load);
         <div class="ico">{{ SPORT_EMOJI[w.sport] ?? '💪' }}</div>
         <div class="grow">
           <div class="name">
-            {{ w.name }} · {{ sportTitle(w) }}
-            <span v-if="w.session" class="muted">· занятие из {{ w.session.size }} частей</span>
+            {{ w.name }} · {{ w.session ? sessionTitle(w.session.parts) : sportTitle(w) }}
             <span v-if="w.verdict !== 'counted'" class="muted">· {{ VERDICT_LABEL[w.verdict] }}</span>
           </div>
           <div class="muted">

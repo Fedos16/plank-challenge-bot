@@ -476,7 +476,13 @@ export interface Workout {
   forceCounted: boolean;
   forceNote: string | null;
   /** Часть общей тренировки: источник разрезал занятие на несколько записей. */
-  session: { id: number; durationMin: number; size: number } | null;
+  session: {
+    id: number;
+    durationMin: number;
+    size: number;
+    /** Виды активности внутри занятия, от самого длинного. */
+    parts: { sport: string; sportRaw: string | null }[];
+  } | null;
 }
 
 export interface WorkoutInput {

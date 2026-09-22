@@ -12,6 +12,7 @@ import {
   errorText,
   newClientId,
   numOrNull,
+  sessionTitle,
   sportTitle,
 } from '../fitness';
 
@@ -207,7 +208,7 @@ onMounted(load);
           </div>
           <div v-if="w.note" class="muted">{{ w.note }}</div>
           <div v-if="w.session" class="muted">
-            Часть тренировки из {{ w.session.size }} записей подряд, вместе {{ w.session.durationMin }} мин
+            Часть занятия «{{ sessionTitle(w.session.parts) }}», вместе {{ w.session.durationMin }} мин
           </div>
           <div v-if="w.forceCounted" class="muted">
             Засчитана админом<template v-if="w.forceNote">: {{ w.forceNote }}</template>

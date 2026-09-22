@@ -163,13 +163,6 @@ export function classify(workouts: WorkoutLike[], rules: CountingRules): Classif
   return { sessions, verdicts };
 }
 
-/** Сессия каждой записи: чтобы показать сегменты одного занятия вместе. */
-export function sessionIndex(sessions: Session[]): Map<number, Session> {
-  const index = new Map<number, Session>();
-  for (const s of sessions) for (const id of s.workoutIds) index.set(id, s);
-  return index;
-}
-
 /** Почему тренировка идёт или не идёт в зачёт недели. */
 export function classifyWorkouts(workouts: WorkoutLike[], rules: CountingRules): Map<number, Verdict> {
   return classify(workouts, rules).verdicts;

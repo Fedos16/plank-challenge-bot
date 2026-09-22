@@ -3,14 +3,7 @@ import { prisma } from '../../lib/prisma';
 import { dateToDay, deadlineInstant, dayjs, type DayStr } from '../../lib/time';
 import type { DayWindow } from '../../lib/weeks';
 import { challengeEndDay } from '../challenge';
-import {
-  assignDuplicates,
-  classify,
-  sessionIndex,
-  type CountingRules,
-  type Session,
-  type Verdict,
-} from './counting';
+import { assignDuplicates, classify, type CountingRules, type Session, type Verdict } from './counting';
 
 /** Виды активности для ручного ввода. Источники присылают свои названия — они ложатся в sportRaw. */
 export const SPORTS = [
@@ -77,10 +70,57 @@ export interface WorkoutDTO {
    * null — запись сама по себе. В зачёт идёт сессия целиком, поэтому её длительность
    * важнее длительности отдельного сегмента.
    */
-  session: { id: number; durationMin: number; size: number } | null;
+  session: WorkoutSessionDTO | null;
 }
 
-export function toWorkoutDTO(w: Workout, verdict: Verdict, session?: Session): WorkoutDTO {
+export interface WorkoutSessionDTO {
+  id: number;
+  durationMin: number;
+  size: number;
+  /** Виды активности внутри занятия, без повторов, от самого длинного: для названия «Ходьба и силовая». */
+  parts: { sport: string; sportRaw: string | null }[];
+}
+
+/** Как показывается вид активности: у «other» название приходит от источника. */
+function sportKey(w: Workout): string {
+  return w.sport === 'other' ? `other:${w.sportRaw ?? ''}` : w.sport;
+}
+
+/** Описание сессии для DTO. null — занятие из одной записи, показывать нечего. */
+export function describeSession(session: Session, segments: Workout[]): WorkoutSessionDTO | null {
+  if (segments.length < 2) return null;
+  const parts: { sport: string; sportRaw: string | null }[] = [];
+  const seen = new Set<string>();
+  for (const w of [...segments].sort((a, b) => b.durationSec - a.durationSec)) {
+    const key = sportKey(w);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push({ sport: w.sport, sportRaw: w.sportRaw });
+  }
+  return {
+    id: session.id,
+    durationMin: Math.round(session.durationSec / 60),
+    size: segments.length,
+    parts,
+  };
+}
+
+/** Описание сессии для каждой записи, входящей в занятие из нескольких частей. */
+export function describeSessions(sessions: Session[], workouts: Workout[]): Map<number, WorkoutSessionDTO> {
+  const byId = new Map(workouts.map((w) => [w.id, w]));
+  const result = new Map<number, WorkoutSessionDTO>();
+  for (const s of sessions) {
+    const segments = s.workoutIds
+      .map((id) => byId.get(id))
+      .filter((w): w is Workout => w !== undefined);
+    const dto = describeSession(s, segments);
+    if (!dto) continue;
+    for (const id of s.workoutIds) result.set(id, dto);
+  }
+  return result;
+}
+
+export function toWorkoutDTO(w: Workout, verdict: Verdict, session?: WorkoutSessionDTO | null): WorkoutDTO {
   return {
     id: w.id,
     source: w.source,
@@ -96,14 +136,7 @@ export function toWorkoutDTO(w: Workout, verdict: Verdict, session?: Session): W
     excludedNote: w.excludedNote,
     forceCounted: w.forceCounted,
     forceNote: w.forceNote,
-    session:
-      session && session.workoutIds.length > 1
-        ? {
-            id: session.id,
-            durationMin: Math.round(session.durationSec / 60),
-            size: session.workoutIds.length,
-          }
-        : null,
+    session: session ?? null,
   };
 }
 
@@ -121,7 +154,7 @@ export function sessionToWorkoutDTO(items: Workout[], session: Session): Workout
     return values.length ? values.reduce((a, b) => a + b, 0) : null;
   };
   return {
-    ...toWorkoutDTO(main, session.verdict, session),
+    ...toWorkoutDTO(main, session.verdict, describeSession(session, items)),
     startedAt: first.startedAt.toISOString(),
     durationMin: Math.round(session.durationSec / 60),
     kcal: sum((w) => w.kcal),
@@ -141,7 +174,7 @@ export async function listWorkouts(ch: Challenge, userId: number): Promise<Worko
   const { from, to } = challengeInstants(ch);
   const workouts = await loadWorkouts(userId, from, to);
   const { verdicts, sessions } = classify(workouts, rulesOf(ch));
-  const bySession = sessionIndex(sessions);
+  const bySession = describeSessions(sessions, workouts);
   return workouts
     .map((w) => toWorkoutDTO(w, verdicts.get(w.id) ?? 'counted', bySession.get(w.id)))
     .reverse();

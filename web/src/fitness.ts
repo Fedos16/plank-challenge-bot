@@ -93,6 +93,28 @@ export function sportTitle(w: { sport: string; sportRaw: string | null }): strin
   return SPORT_LABEL[w.sport] ?? w.sportRaw ?? w.sport;
 }
 
+/**
+ * Первая буква строчной — но только у обычных слов: «HIIT / кроссфит» так и остаётся,
+ * иначе получилось бы «hIIT».
+ */
+function lowerFirst(title: string): string {
+  return /^[A-ZА-ЯЁ][a-zа-яё]/.test(title) ? title.charAt(0).toLowerCase() + title.slice(1) : title;
+}
+
+/**
+ * Название занятия, собранного из нескольких записей: «Ходьба и силовая». Часы режут занятие
+ * по видам активности, и одно название вместо всех потеряло бы половину тренировки.
+ */
+export function sessionTitle(parts: { sport: string; sportRaw: string | null }[]): string {
+  const titles = parts.map(sportTitle);
+  const first = titles[0];
+  if (!first) return '';
+  const rest = titles.slice(1).map(lowerFirst);
+  if (!rest.length) return first;
+  if (rest.length === 1) return `${first} и ${rest[0]}`;
+  return `${first}, ${rest.slice(0, -1).join(', ')} и ${rest[rest.length - 1]}`;
+}
+
 export const VERDICT_LABEL: Record<Verdict, string> = {
   counted: 'в зачёте',
   too_short: 'короче минимума',

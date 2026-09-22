@@ -19,6 +19,7 @@ import {
   errorText,
   formatNum,
   hearts,
+  sessionTitle,
   sportTitle,
 } from '../fitness';
 
@@ -394,7 +395,7 @@ onMounted(async () => {
                 </div>
                 <div class="muted">{{ formatDateTimeRu(w.startedAt) }} · {{ SOURCE_LABEL[w.source] ?? w.source }}</div>
                 <div v-if="w.session" class="muted">
-                  Часть тренировки из {{ w.session.size }} записей подряд, вместе {{ w.session.durationMin }} мин
+                  Часть занятия «{{ sessionTitle(w.session.parts) }}», вместе {{ w.session.durationMin }} мин
                 </div>
               </div>
               <button v-if="w.verdict !== 'excluded'" class="btn small secondary" @click="setExcluded(p, w, true)">Снять</button>
