@@ -435,6 +435,8 @@ export interface WeekHistory {
   outOfGame: boolean;
   forgivenNote: string | null;
   upgraded: boolean;
+  /** Все дни недели с зачтёнными тренировками: для полоски. */
+  days: WeekDay[];
 }
 
 export interface GameState {

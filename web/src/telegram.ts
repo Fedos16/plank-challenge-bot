@@ -9,6 +9,8 @@ interface TelegramWebApp {
   HapticFeedback?: { impactOccurred: (s: string) => void; notificationOccurred: (t: string) => void };
   showConfirm?: (message: string, callback: (ok: boolean) => void) => void;
   openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
 }
 
 declare global {
@@ -23,6 +25,9 @@ export function initTelegram(): void {
   try {
     tg?.ready();
     tg?.expand();
+    // Шапка и подложка — в цвет фона страницы, чтобы карточки не висели на белом
+    tg?.setHeaderColor?.('secondary_bg_color');
+    tg?.setBackgroundColor?.('secondary_bg_color');
   } catch {
     /* вне Telegram — игнорируем */
   }

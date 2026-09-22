@@ -12,7 +12,7 @@ import {
 import { challengeEndDay, challengeTimeline } from '../challenge';
 import { countInWindow } from './counting';
 import { replayLives, weeksToForgiveForReinstate, type LivesState } from './lives';
-import { loadWorkouts, rulesOf, windowInstants } from './workouts';
+import { challengeInstants, loadWorkouts, rulesOf, windowInstants } from './workouts';
 
 export interface WeekComputation {
   /** Окно участника: вступивший посреди недели отвечает только за остаток. */
@@ -153,6 +153,16 @@ export async function upgradeClosedWeeks(userId: number, startedAts: Date[]): Pr
 
 export type WeekStatus = 'passed' | 'failed' | 'forgiven';
 
+/** День в полоске недели на экране. */
+export interface WeekDayDTO {
+  day: DayStr;
+  count: number;
+  isToday: boolean;
+  isFuture: boolean;
+  /** Внутри окна участия: за дни до вступления участник не отвечает. */
+  inWindow: boolean;
+}
+
 export interface WeekHistoryDTO {
   id: number;
   weekNumber: number;
@@ -166,6 +176,8 @@ export interface WeekHistoryDTO {
   forgivenNote: string | null;
   /** Провал исправлен опоздавшей синхронизацией с устройства. */
   upgraded: boolean;
+  /** Все дни недели челленджа с зачтёнными тренировками: для полоски на экране. */
+  days: WeekDayDTO[];
 }
 
 export interface CurrentWeekDTO {
@@ -175,7 +187,7 @@ export interface CurrentWeekDTO {
   required: number;
   done: number;
   /** Все дни недели челленджа: для полоски на экране. */
-  days: { day: DayStr; count: number; isToday: boolean; isFuture: boolean; inWindow: boolean }[];
+  days: WeekDayDTO[];
 }
 
 export interface GameStateDTO {
@@ -221,6 +233,42 @@ async function currentWeekOf(ch: Challenge, participation: Participation): Promi
   };
 }
 
+/**
+ * Дни закрытых недель для полосок: одна выборка тренировок за весь челлендж, а не по
+ * запросу на неделю. Считаем по текущим данным, как и текущую неделю: удалённая после
+ * закрытия тренировка из полоски пропадёт, хотя итог недели останется прежним.
+ */
+async function historyDaysOf(
+  ch: Challenge,
+  participation: Participation,
+  results: WeekResult[],
+): Promise<Map<number, WeekDayDTO[]>> {
+  const out = new Map<number, WeekDayDTO[]>();
+  if (results.length === 0) return out;
+  const { from, to } = challengeInstants(ch);
+  const workouts = await loadWorkouts(participation.userId, from, to);
+  const rules = rulesOf(ch);
+  const startDay = dateToDay(ch.startDate);
+  const endDay = challengeEndDay(ch);
+  for (const r of results) {
+    const week = weekRange(startDay, r.weekIndex, endDay);
+    if (!week) continue;
+    const { byDay } = countInWindow(workouts, rules, week);
+    const window = { start: dateToDay(r.weekStart), end: dateToDay(r.weekEnd) };
+    out.set(
+      r.weekIndex,
+      dayRange(week.start, week.end).map((day) => ({
+        day,
+        count: byDay.get(day) ?? 0,
+        isToday: false,
+        isFuture: false,
+        inWindow: day >= window.start && day <= window.end,
+      })),
+    );
+  }
+  return out;
+}
+
 export async function getGameState(ch: Challenge, participation: Participation): Promise<GameStateDTO> {
   const results = await prisma.weekResult.findMany({
     where: { participationId: participation.id },
@@ -228,6 +276,7 @@ export async function getGameState(ch: Challenge, participation: Participation):
   });
   const lives = livesOf(ch, results);
   const lifeByWeek = new Map(lives.weeks.map((w) => [w.weekIndex, w]));
+  const daysByWeek = await historyDaysOf(ch, participation, results);
   const currentWeek = await currentWeekOf(ch, participation);
 
   return {
@@ -251,6 +300,7 @@ export async function getGameState(ch: Challenge, participation: Participation):
         outOfGame: lifeByWeek.get(r.weekIndex)?.outOfGame ?? false,
         forgivenNote: r.forgivenNote,
         upgraded: r.upgradedAt !== null,
+        days: daysByWeek.get(r.weekIndex) ?? [],
       }))
       .reverse(),
     totalCounted: await totalCountedOf(ch, participation),

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { api } from '../api';
-import type { FitnessOverview } from '../types';
+import type { FitnessOverview, WeekHistory } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { formatDateRu } from '../helpers';
+import { daysBetweenISO, formatDateRu, todayInZone } from '../helpers';
 import { GOAL_EMOJI, GOAL_LABEL, UNIT_LABEL, errorText, formatNum, hearts } from '../fitness';
 import GoalOnboarding from './GoalOnboarding.vue';
 import BodyTab from './BodyTab.vue';
@@ -85,6 +85,40 @@ const remaining = computed(() => {
   const left = p.target > p.start ? p.target - p.current : p.current - p.target;
   return Math.max(0, Math.round(left * 10) / 10);
 });
+
+/**
+ * Сдвиг показателя цели от старта: «−2,6 кг за 26 дн.». Зелёный — идёт к цели, красный —
+ * от неё. Нет старта, текущего замера или цели — нет и строки.
+ */
+const goalDelta = computed<{ text: string; tone: 'good' | 'bad' | 'flat' } | null>(() => {
+  const d = data.value;
+  const p = d?.progress;
+  if (!d || !p || p.start === null || p.current === null || p.target === null) return null;
+  const delta = Math.round((p.current - p.start) * 10) / 10;
+  const toward = Math.sign(p.target - p.start);
+  const tone = delta === 0 || toward === 0 ? 'flat' : Math.sign(delta) === toward ? 'good' : 'bad';
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : '±';
+  const days = d.goal?.startDay ? daysBetweenISO(d.goal.startDay, todayInZone(d.challenge.timezone)) : 0;
+  const period = days > 0 ? `за ${days} дн.` : 'со старта';
+  return { text: `${sign}${formatNum(Math.abs(delta))} ${unit.value} ${period}`.replace(/\s+/g, ' '), tone };
+});
+
+/** Значок итога недели. */
+function weekMark(w: WeekHistory): string {
+  if (w.outOfGame) return '☠️';
+  if (w.status === 'passed') return '✅';
+  if (w.status === 'forgiven') return '🤝';
+  return '💔';
+}
+
+/** Подпись под номером недели: счёт и что с жизнью. */
+function weekMeta(w: WeekHistory): string {
+  const score = `${w.done} из ${w.required}`;
+  if (w.outOfGame) return `${score} · вне зачёта`;
+  if (w.status === 'forgiven') return `${score} · прощена`;
+  if (w.lifeLost) return `${score} · −1 жизнь`;
+  return score;
+}
 
 /**
  * Состояние текущей недели для цвета блока: closed — норма набрана, risk — дней осталось
@@ -235,6 +269,9 @@ watch(() => props.challengeId, load);
             <div v-if="typeof data.progress?.percent === 'number'" class="bar">
               <div class="bar-fill" :style="{ width: data.progress.percent + '%' }" />
             </div>
+            <div v-if="goalDelta" class="delta-line" :class="goalDelta.tone">
+              {{ goalDelta.tone === 'good' ? '↘' : goalDelta.tone === 'bad' ? '↗' : '→' }} {{ goalDelta.text }}
+            </div>
             <div v-if="data.goal.note" class="muted" style="margin-top: 6px">{{ data.goal.note }}</div>
           </div>
 
@@ -271,21 +308,22 @@ watch(() => props.challengeId, load);
             <div class="bar"><div class="bar-fill time" :style="{ width: timePercent + '%' }" /></div>
           </div>
 
-          <!-- История недель: от свежих к старым -->
+          <!-- История недель: от свежих к старым, каждая — полоской дней -->
           <div v-if="data.game.history.length" class="card">
             <h3>Недели</h3>
-            <div v-for="w in data.game.history" :key="w.id" class="row">
+            <div
+              v-for="w in data.game.history"
+              :key="w.id"
+              class="row week-row"
+              :class="{ out: w.outOfGame }"
+              :title="`${formatDateRu(w.start)} – ${formatDateRu(w.end)}`"
+            >
               <div class="name">
                 Неделя {{ w.weekNumber }}
-                <div class="meta">{{ formatDateRu(w.start) }} – {{ formatDateRu(w.end) }}</div>
+                <div class="meta">{{ weekMeta(w) }}</div>
               </div>
-              <div class="meta">{{ w.done }} из {{ w.required }}</div>
-              <div class="week-mark">
-                <template v-if="w.outOfGame">вне зачёта</template>
-                <template v-else-if="w.status === 'passed'">✅</template>
-                <template v-else-if="w.status === 'forgiven'">🤝 прощена</template>
-                <template v-else>💔 −1</template>
-              </div>
+              <WeekStrip v-if="w.days.length" :days="w.days" tone="card" size="sm" />
+              <div class="week-mark">{{ weekMark(w) }}</div>
             </div>
           </div>
         </template>
@@ -436,11 +474,32 @@ watch(() => props.challengeId, load);
 .streak-hero .lbl {
   padding: 0 16px;
 }
-.week-mark {
+.week-row {
+  gap: 10px;
+}
+.week-row.out {
+  opacity: 0.55;
+}
+.week-row .name {
   min-width: 78px;
+}
+.week-mark {
+  width: 24px;
   text-align: right;
+  font-size: 15px;
+}
+/* сдвиг к цели: стрелка вниз-вправо к цели зелёная, от цели — красная */
+.delta-line {
+  margin-top: 8px;
   font-size: 13px;
   font-weight: 600;
+  color: var(--hint);
+}
+.delta-line.good {
+  color: var(--green);
+}
+.delta-line.bad {
+  color: var(--red);
 }
 .switch {
   display: flex;

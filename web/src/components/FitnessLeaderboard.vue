@@ -134,7 +134,7 @@ onMounted(load);
         <div class="grow">
           <div class="name">
             {{ w.name }} · {{ w.session ? sessionTitle(w.session.parts) : sportTitle(w) }}
-            <span v-if="w.verdict !== 'counted'" class="muted">· {{ VERDICT_LABEL[w.verdict] }}</span>
+            <span v-if="w.verdict !== 'counted'" class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
           </div>
           <div class="muted">
             {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ feedMeta(w) }}

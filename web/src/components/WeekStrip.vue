@@ -19,7 +19,7 @@ function missed(d: WeekDay): boolean {
 </script>
 
 <template>
-  <div class="days" :class="[tone, size]">
+  <div class="days" :class="[`tone-${tone}`, `size-${size}`]">
     <div
       v-for="d in days"
       :key="d.day"
@@ -92,46 +92,46 @@ function missed(d: WeekDay): boolean {
 }
 
 /* на белой карточке */
-.card .dow {
+.tone-card .dow {
   color: var(--hint);
   opacity: 1;
 }
-.card .day-col.today .dow {
+.tone-card .day-col.today .dow {
   color: var(--text);
 }
-.card .day {
+.tone-card .day {
   border-color: rgba(128, 128, 128, 0.35);
 }
-.card .day.missed {
+.tone-card .day.missed {
   background: rgba(128, 128, 128, 0.28);
   border-color: rgba(128, 128, 128, 0.28);
   color: rgba(255, 255, 255, 0.9);
 }
-.card .day.today {
+.tone-card .day.today {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.3);
 }
 
 /* компактная: в заголовках карточек */
-.sm {
+.size-sm {
   gap: 5px;
 }
-.sm .day-col {
+.size-sm .day-col {
   gap: 3px;
 }
-.sm .dow {
+.size-sm .dow {
   font-size: 10px;
 }
-.sm .day {
+.size-sm .day {
   width: 22px;
   height: 22px;
   font-size: 12px;
   border-width: 1.5px;
 }
-.sm .day.missed {
+.size-sm .day.missed {
   font-size: 11px;
 }
-.sm .day.today {
+.size-sm .day.today {
   box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.3);
 }
 </style>

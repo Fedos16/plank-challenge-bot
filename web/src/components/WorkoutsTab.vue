@@ -74,40 +74,6 @@ interface WeekGroup {
 
 const today = computed(() => todayInZone(props.overview.challenge.timezone));
 
-function addDays(day: string, n: number): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-/**
- * Полоска закрытой недели по журналу: границы недели — от старта челленджа, окно участия —
- * из итога недели (вступивший посреди недели отвечает только за остаток).
- */
-function closedWeekDays(weekNumber: number, window: { start: string; end: string }, items: Workout[]): WeekDay[] {
-  const ch = props.overview.challenge;
-  const start = addDays(ch.startDate, (weekNumber - 1) * 7);
-  let end = addDays(start, 6);
-  if (ch.endDate && ch.endDate < end) end = ch.endDate;
-  const byDay = new Map<string, number>();
-  for (const w of items) {
-    if (w.verdict !== 'counted') continue;
-    const day = challengeDay(w.startedAt);
-    byDay.set(day, (byDay.get(day) ?? 0) + 1);
-  }
-  const days: WeekDay[] = [];
-  for (let day = start; day <= end; day = addDays(day, 1)) {
-    days.push({
-      day,
-      count: byDay.get(day) ?? 0,
-      isToday: day === today.value,
-      isFuture: day > today.value,
-      inWindow: day >= window.start && day <= window.end,
-    });
-  }
-  return days;
-}
-
 /** Журнал по неделям челленджа, от свежих к старым; у недели — её итог, если он уже есть. */
 const groups = computed<WeekGroup[]>(() => {
   const start = props.overview.challenge.startDate;
@@ -129,7 +95,7 @@ const groups = computed<WeekGroup[]>(() => {
       if (closed) {
         const mark = closed.status === 'passed' ? '✅' : closed.status === 'forgiven' ? '🤝' : '💔';
         summary = `${mark} ${closed.done} из ${closed.required}`;
-        days = closedWeekDays(weekNumber, closed, items);
+        days = closed.days.length ? closed.days : null;
       } else if (current) {
         summary = `${current.done} из ${current.required}`;
         days = current.days;
@@ -307,25 +273,6 @@ onMounted(load);
 }
 .workout .title {
   font-weight: 600;
-}
-.verdict {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 600;
-  vertical-align: middle;
-  background: rgba(128, 128, 128, 0.15);
-  color: var(--hint);
-}
-.verdict.counted {
-  background: rgba(46, 204, 113, 0.15);
-  color: var(--green);
-}
-.verdict.excluded {
-  background: rgba(231, 76, 60, 0.15);
-  color: var(--red);
 }
 .row-x {
   border: none;

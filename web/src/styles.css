@@ -1,6 +1,11 @@
 :root {
-  --bg: var(--tg-theme-bg-color, #f4f4f7);
-  --secondary-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+  /*
+   * Фон страницы — «подложка списка» Telegram (secondary_bg: серая), карточки — «фон
+   * секции» (section_bg: белая), как в настройках самого Telegram. В старых клиентах без
+   * section_bg карточки берут основной фон. Вне Telegram — свои серый и белый.
+   */
+  --bg: var(--tg-theme-secondary-bg-color, #f4f4f7);
+  --secondary-bg: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
   --text: var(--tg-theme-text-color, #1a1a1a);
   --hint: var(--tg-theme-hint-color, #8a8a8e);
   --link: var(--tg-theme-link-color, #2f6feb);
@@ -348,6 +353,33 @@ textarea {
   z-index: 50;
 }
 .error-text {
+  color: var(--red);
+}
+
+/* Вердикт тренировки: зелёный — в зачёте, жёлтый — почти (коротко, лимит дня), красный — снята */
+.verdict {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--hint);
+}
+.verdict.counted {
+  background: rgba(46, 204, 113, 0.15);
+  color: var(--green);
+}
+.verdict.too_short,
+.verdict.day_limit {
+  background: rgba(245, 166, 35, 0.18);
+  color: #c47d00;
+}
+.verdict.excluded {
+  background: rgba(231, 76, 60, 0.15);
   color: var(--red);
 }
 pre.report {

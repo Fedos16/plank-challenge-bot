@@ -10,7 +10,7 @@ import type {
   WeightPoint,
 } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { formatDateRu, formatTimeRu } from '../helpers';
+import { formatDayHumanRu, formatTimeRu, todayInZone } from '../helpers';
 import {
   MEASUREMENT_KINDS,
   MEASUREMENT_LABEL,
@@ -72,6 +72,31 @@ const muscleSeries = computed(() => series((p) => (muscleUnit.value === 'kg' ? p
 
 /** История для списка — сверху свежее. */
 const recent = computed<WeightPoint[]>(() => [...(weight.value?.history ?? [])].reverse().slice(0, 15));
+
+const today = computed(() => todayInZone(props.overview.challenge.timezone));
+
+/**
+ * Куда должен идти вес по цели: −1 — вниз, +1 — вверх, 0 — цель не про вес. Нужно, чтобы
+ * красить сдвиг между взвешиваниями: минус при похудении зелёный, при наборе — красный.
+ */
+const weightDirection = computed(() => {
+  const p = props.overview.progress;
+  if (!p || p.metric !== 'weightKg' || p.start === null || p.target === null) return 0;
+  return Math.sign(p.target - p.start);
+});
+
+/** Сдвиг веса от предыдущего взвешивания в списке (список — от новых к старым). */
+function weightDelta(i: number): number | null {
+  const cur = recent.value[i];
+  const prev = recent.value[i + 1];
+  if (!cur || !prev) return null;
+  return Math.round((cur.weightKg - prev.weightKg) * 10) / 10;
+}
+
+function deltaTone(delta: number | null): 'good' | 'bad' | '' {
+  if (delta === null || delta === 0 || weightDirection.value === 0) return '';
+  return Math.sign(delta) === weightDirection.value ? 'good' : 'bad';
+}
 
 interface MeasureRow {
   kind: MeasurementKind;
@@ -229,7 +254,7 @@ onMounted(load);
       <h3>📏 Обхваты</h3>
       <div v-for="m in measureSummary" :key="m.kind" class="row">
         <div class="name">{{ MEASUREMENT_LABEL[m.kind] }}</div>
-        <div class="meta">{{ formatDateRu(m.last.day) }}</div>
+        <div class="meta">{{ formatDayHumanRu(m.last.day, today) }}</div>
         <div v-if="m.delta !== null" class="meta">{{ formatDelta(m.delta) }}</div>
         <div class="fire">{{ formatNum(m.last.value) }} см</div>
         <button class="row-x" :disabled="busy" @click="removeMeasurement(m.last.id)">✕</button>
@@ -251,12 +276,18 @@ onMounted(load);
     <!-- История взвешиваний -->
     <div v-if="recent.length" class="card">
       <h3>История веса</h3>
-      <div v-for="e in recent" :key="e.id" class="row">
-        <div class="name">{{ formatDateRu(e.day) }}</div>
-        <div class="meta">{{ formatTimeRu(e.measuredAt) }}</div>
+      <div v-for="(e, i) in recent" :key="e.id" class="row">
+        <div class="name">
+          {{ formatDayHumanRu(e.day, today) }}
+          <div class="meta">{{ formatTimeRu(e.measuredAt) }}</div>
+        </div>
         <!-- в строке место под один показатель состава: тот, за которым человек следит -->
         <div v-if="goalMetric === 'muscle' && muscleText(e)" class="meta">{{ muscleText(e) }}</div>
         <div v-else-if="e.bodyFat !== null" class="meta">жир {{ e.bodyFat }}%</div>
+        <!-- сдвиг от предыдущего взвешивания: к цели зелёный, от цели красный -->
+        <div v-if="weightDelta(i) !== null" class="delta" :class="deltaTone(weightDelta(i))">
+          {{ formatDelta(weightDelta(i)!) }}
+        </div>
         <div class="fire">{{ formatNum(e.weightKg) }}</div>
         <button class="row-x" :disabled="busy" @click="removeWeight(e.id)">✕</button>
       </div>
@@ -265,6 +296,19 @@ onMounted(load);
 </template>
 
 <style scoped>
+.delta {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hint);
+  min-width: 34px;
+  text-align: right;
+}
+.delta.good {
+  color: var(--green);
+}
+.delta.bad {
+  color: var(--red);
+}
 .three {
   display: grid;
   grid-template-columns: 1.3fr 1fr 1fr;
