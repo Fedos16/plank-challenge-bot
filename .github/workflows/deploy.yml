@@ -29,4 +29,8 @@ jobs:
           docker compose run --rm app npx prisma db push --skip-generate
           docker compose up -d
           docker image prune -f
+          # Кеш buildx не удаляется вместе с образами: за полтора месяца он вырос
+          # до 7.8 ГБ на диске в 38 ГБ. Держим потолок, чтобы сборки оставались
+          # быстрыми (свежие слои переиспользуются), а диск не заполнялся.
+          docker builder prune -f --max-used-space 4GB
           docker compose ps
