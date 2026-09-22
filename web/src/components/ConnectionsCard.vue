@@ -34,19 +34,20 @@ interface HubGuide {
 const HUBS: Record<HubProvider, HubGuide> = {
   hae: {
     title: 'iPhone · Apple Watch',
-    covers: 'Всё, что пишет в «Здоровье»: Apple Watch, Garmin, Polar, Suunto',
-    note: 'Автоматизации в Health Auto Export — платная функция приложения.',
+    covers: 'Всё, что пишет в «Здоровье»: Apple Watch, Garmin, Polar, Suunto, а также вес и состав тела с умных весов',
+    note: 'Автоматизации в Health Auto Export — платная функция приложения. Процента воды в «Здоровье» нет, эта графа у iPhone останется пустой.',
     steps: [
-      'Установите Health Auto Export из App Store и дайте ему доступ к тренировкам.',
+      'Установите Health Auto Export из App Store и дайте ему доступ к тренировкам и показателям здоровья.',
       'Automations → New Automation → тип REST API.',
       'URL — адрес ниже. В Headers добавьте Authorization со значением ниже.',
       'Data Type — Workouts, Export Format — JSON, версия экспорта — v2. Маршрут и подробные метрики лучше выключить: выгрузка будет легче.',
+      'Чтобы приходил вес, добавьте туда же Health Metrics и отметьте Weight & Body Mass, Body Fat Percentage и Lean Body Mass.',
       'Включите автоматизацию и нажмите Manual Export — первая выгрузка подтянет историю.',
     ],
   },
   health_connect: {
     title: 'Android · браслеты и часы',
-    covers: 'Всё, что пишет в Health Connect: Mi Fitness, Zepp (Amazfit), Samsung Health, Garmin, Polar',
+    covers: 'Всё, что пишет в Health Connect: Mi Fitness, Zepp (Amazfit), Samsung Health, Garmin, Polar, а также вес и состав тела с умных весов',
     note: 'Huawei Health в Health Connect напрямую не пишет — таким участникам проще вносить тренировки вручную.',
     // В Google Play приложение платное, но у него открытый код и автор сам выкладывает
     // бесплатную сборку в релизах на GitHub — та же программа, без магазина.
@@ -58,6 +59,7 @@ const HUBS: Record<HubProvider, HubGuide> = {
       'В приложении браслета включите синхронизацию с Health Connect (обычно «Профиль» → «Подключённые приложения»).',
       'Скачайте по кнопке ниже файл app-foss-release.apk и установите его: Android попросит разрешить установку из браузера — это нормально. В Google Play то же приложение платное, эта сборка — бесплатная, от самого автора.',
       'Откройте Health Connect Webhook и разрешите читать Exercise, Active calories и Heart rate.',
+      'Чтобы приходил вес, разрешите там же Weight, Body fat, Lean body mass и Body water mass.',
       'Добавьте Webhook URL — адрес ниже. В Custom headers добавьте Authorization со значением ниже.',
       'Включите фоновую синхронизацию и нажмите Sync now.',
     ],

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mapHaeWorkout, parseHaeDate, parseHaePayload } from '../src/services/parsers/hae';
 import { parseHealthConnectPayload } from '../src/services/parsers/healthConnect';
+import { parseHaeBody } from '../src/services/parsers/haeBody';
 import { parseHealthConnectBody } from '../src/services/parsers/healthConnectBody';
 
 // ---------- Health Auto Export ----------
@@ -200,4 +201,51 @@ test('parseHealthConnectBody: несколько взвешиваний за о�
   assert.equal(list.length, 2);
   assert.equal(list[0]!.bodyFat, null);
   assert.equal(list[1]!.bodyFat, 24);
+});
+
+// ---------- Health Auto Export: состав тела ----------
+
+/** Метрика выгрузки: имя, единицы и точки с временем телефона. */
+function metric(name: string, units: string, qty: number, date = '2026-09-22 08:31:12 +0300') {
+  return { name, units, data: [{ qty, date }] };
+}
+
+test('parseHaeBody: вес, жир и мышцы одного взвешивания склеиваются по времени', () => {
+  const [m] = parseHaeBody({
+    data: {
+      metrics: [
+        metric('weight_body_mass', 'kg', 84.3),
+        metric('body_fat_percentage', '%', 24.1, '2026-09-22 08:31:14 +0300'), // весы пишут точки с разбегом в секунды
+        metric('lean_body_mass', 'kg', 63.9),
+        metric('step_count', 'count', 8500), // посторонние метрики не мешают
+      ],
+    },
+  });
+  assert.ok(m);
+  assert.equal(m.measuredAt.toISOString(), '2026-09-22T05:31:12.000Z');
+  assert.equal(m.weightKg, 84.3);
+  assert.equal(m.bodyFat, 24.1);
+  assert.equal(m.muscle, 75.8); // 63.9 / 84.3 — база хранит долю, а не килограммы
+  assert.equal(m.water, null); // процента воды в HealthKit нет
+  assert.equal(m.scaleUserId, null); // пишется владельцу токена без профилей openScale
+});
+
+test('parseHaeBody: фунты переводятся в килограммы', () => {
+  const [m] = parseHaeBody({ data: { metrics: [metric('weight_body_mass', 'lb', 185.5)] } });
+  assert.equal(m?.weightKg, 84.14);
+});
+
+test('parseHaeBody: доля жира из HealthKit разворачивается в проценты', () => {
+  const [m] = parseHaeBody({
+    data: {
+      metrics: [metric('weight_body_mass', 'kg', 84.3), metric('body_fat_percentage', '%', 0.241)],
+    },
+  });
+  assert.equal(m?.bodyFat, 24.1); // человека с одним процентом жира не бывает
+});
+
+test('parseHaeBody: без веса взвешивания нет, тренировочная выгрузка — не ошибка', () => {
+  assert.deepEqual(parseHaeBody({ data: { metrics: [metric('body_fat_percentage', '%', 24.1)] } }), []);
+  assert.deepEqual(parseHaeBody({ data: { workouts: [HAE_V2] } }), []);
+  assert.deepEqual(parseHaeBody({}), []);
 });
