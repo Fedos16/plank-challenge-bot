@@ -7,6 +7,7 @@ import {
   overlapRatio,
   type WorkoutLike,
 } from '../src/services/fitness/counting';
+import { clampWindow, requiredFor } from '../src/lib/weeks';
 
 let nextId = 1;
 /** Тренировка: время в UTC, длительность в минутах. */
@@ -115,4 +116,24 @@ test('countInWindow: считает только засчитанные и то�
   const { done, byDay } = countInWindow(workouts, RULES, window);
   assert.equal(done, 2);
   assert.deepEqual([...byDay.entries()], [['2026-10-05', 1], ['2026-10-11', 1]]);
+});
+
+test('вступивший позже: норма за остаток недели, но тренировка до вступления засчитана', () => {
+  // Правило из computeWeek: норму берём по окну участия, зачёт — по всей неделе челленджа.
+  // Данные с часов приходят за прошедшие дни, а в приложение человек заходит позже, поэтому
+  // привязка зачёта к моменту вступления теряла настоящую тренировку.
+  const week = { start: '2026-10-05', end: '2026-10-11', days: 7 };
+  const joined = clampWindow(week, '2026-10-06');
+  assert.ok(joined);
+
+  const workouts = [
+    w('2026-10-05T06:00:00Z', 65), // накануне вступления
+    w('2026-10-08T06:00:00Z', 65),
+  ];
+
+  assert.equal(joined.days, 6);
+  assert.equal(requiredFor(3, joined.days), 3);
+  assert.equal(countInWindow(workouts, RULES, week).done, 2);
+  // привязка к окну участия теряла первую тренировку — ради этого правило и поменяли
+  assert.equal(countInWindow(workouts, RULES, joined).done, 1);
 });

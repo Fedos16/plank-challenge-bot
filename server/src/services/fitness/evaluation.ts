@@ -36,9 +36,14 @@ export async function computeWeek(
   const window = clampWindow(week, challengeDay(participation.joinedAt, ch.timezone));
   if (!window) return null;
 
-  const { from, to } = windowInstants(window, ch.timezone);
+  // Норма — по окну участия: вступивший посреди недели отвечает только за остаток.
+  // Зачёт — по всей неделе челленджа. Тренировка, сделанная до того, как человек нажал
+  // «вступить», настоящая, и терять её нельзя: данные с часов приходят за прошлые дни,
+  // а в приложение заходят позже. Иначе тренировка в день старта пропадала у всех,
+  // кто присоединился на следующий день.
+  const { from, to } = windowInstants(week, ch.timezone);
   const workouts = await loadWorkouts(participation.userId, from, to);
-  const { done, byDay } = countInWindow(workouts, rulesOf(ch), window);
+  const { done, byDay } = countInWindow(workouts, rulesOf(ch), week);
   const required = requiredFor(ch.weeklyWorkouts, window.days);
   return { window, week, required, done, passed: done >= required, byDay };
 }
@@ -85,8 +90,8 @@ export async function evaluateClosedWeeks(
             challengeId: ch.id,
             participationId: p.id,
             weekIndex,
-            weekStart: dayToDate(c.window.start),
-            weekEnd: dayToDate(c.window.end),
+            weekStart: dayToDate(c.week.start),
+            weekEnd: dayToDate(c.week.end),
             required: c.required,
             done: c.done,
             passed: c.passed,
@@ -259,8 +264,9 @@ export async function getGameState(ch: Challenge, participation: Participation):
 export async function totalCountedOf(ch: Challenge, participation: Participation): Promise<number> {
   const timeline = challengeTimeline(ch);
   if (timeline.phase === 'upcoming') return 0;
-  const joinDay = challengeDay(participation.joinedAt, ch.timezone);
-  const start = joinDay > timeline.startDate ? joinDay : timeline.startDate;
+  // От начала челленджа, а не от дня вступления: тренировки внутри периода челленджа
+  // идут в зачёт, даже если человек появился в списке участников позже.
+  const start = timeline.startDate;
   const today = todayDay(ch.timezone);
   const end = timeline.endDate && timeline.endDate < today ? timeline.endDate : today;
   if (start > end) return 0;
@@ -324,8 +330,8 @@ export async function recalcWeek(
   return prisma.weekResult.update({
     where: { id: row.id },
     data: {
-      weekStart: dayToDate(c.window.start),
-      weekEnd: dayToDate(c.window.end),
+      weekStart: dayToDate(c.week.start),
+      weekEnd: dayToDate(c.week.end),
       required: c.required,
       done: c.done,
       passed: c.passed,
