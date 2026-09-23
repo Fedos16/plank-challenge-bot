@@ -740,6 +740,8 @@ export interface WeekReportRow {
 export interface GoalWeek {
   /** Пройдено пути от старта до цели, 0..100. */
   percent: number | null;
+  /** То же на начало недели. */
+  percentBefore: number | null;
   /** Сдвиг за неделю в процентах пути; минус — отдалился от цели. */
   deltaPercent: number | null;
   /** Сдвиг в кг или % — только если человек открыл свои цифры. */
@@ -759,5 +761,15 @@ export interface WeekReport {
   };
   weeksAvailable: number;
   rows: WeekReportRow[];
-  totals: { workouts: number; minutes: number; kcal: number; passed: number; inGame: number };
+  totals: {
+    workouts: number;
+    minutes: number;
+    kcal: number;
+    passed: number;
+    inGame: number;
+    /** Приблизились к цели — из тех, у кого цель с показателем. */
+    closer: number;
+    withGoal: number;
+    avgDeltaPercent: number | null;
+  };
 }

@@ -5,7 +5,7 @@ import { weekIndexOf, weekRange, type DayWindow } from '../../lib/weeks';
 import { challengeEndDay, challengeTimeline } from '../challenge';
 import { displayName } from '../users';
 import { computeWeek, livesOf, type WeekDayDTO } from './evaluation';
-import { progressFor, type GoalType, type MuscleUnit } from './goals';
+import { goalProgress, progressFor, type GoalType, type MuscleUnit } from './goals';
 import { windowInstants } from './workouts';
 
 /**
@@ -41,6 +41,8 @@ export interface WeekReportRow {
 export interface GoalWeek {
   /** Пройдено пути от старта до цели, 0..100 — на конец недели (у идущей — на сейчас). */
   percent: number | null;
+  /** То же на начало недели: по нему полоска показывает, сколько пути прибавилось за неделю. */
+  percentBefore: number | null;
   /** Сдвиг за неделю в процентах пути; отрицательный — отдалился от цели. */
   deltaPercent: number | null;
   /** Тот же сдвиг в единицах показателя. Только если человек сам открыл свои цифры. */
@@ -62,7 +64,19 @@ export interface WeekReport {
   /** Сколько недель можно листать: от первой до текущей (или последней у завершённого). */
   weeksAvailable: number;
   rows: WeekReportRow[];
-  totals: { workouts: number; minutes: number; kcal: number; passed: number; inGame: number };
+  totals: {
+    workouts: number;
+    minutes: number;
+    kcal: number;
+    /** Закрыли норму тренировок — из тех, кто в игре. */
+    passed: number;
+    inGame: number;
+    /** Приблизились к цели — из тех, у кого есть цель с показателем. */
+    closer: number;
+    withGoal: number;
+    /** Средний сдвиг к цели в процентах пути; null — целей с показателем нет. */
+    avgDeltaPercent: number | null;
+  };
 }
 
 export type WeekReportError = 'bad_week' | 'not_started';
@@ -92,6 +106,7 @@ function goalWeekOf(
   const path = end.start !== null && end.target !== null ? end.target - end.start : 0;
   return {
     percent: end.percent,
+    percentBefore: goalProgress(end.start, end.target, base),
     // от точного сдвига, а не округлённого: иначе у цели этой недели 32% и «+33% за неделю»
     deltaPercent: delta !== null && path !== 0 ? Math.round((delta / path) * 100) : null,
     delta: open && delta !== null ? Math.round(delta * 10) / 10 : null,
@@ -207,6 +222,7 @@ export async function getWeekReport(
   );
 
   const inGame = rows.filter((r) => r.status !== 'out');
+  const deltas = rows.map((r) => r.goal?.deltaPercent).filter((d): d is number => typeof d === 'number');
   const evaluated = results.some((r) => r.weekIndex === weekIndex);
   return {
     challenge: { id: ch.id, title: ch.title, timezone: ch.timezone },
@@ -225,6 +241,9 @@ export async function getWeekReport(
       kcal: rows.reduce((sum, r) => sum + r.kcal, 0),
       passed: inGame.filter((r) => r.status === 'passed').length,
       inGame: inGame.length,
+      closer: deltas.filter((d) => d > 0).length,
+      withGoal: deltas.length,
+      avgDeltaPercent: deltas.length ? Math.round(deltas.reduce((sum, d) => sum + d, 0) / deltas.length) : null,
     },
   };
 }

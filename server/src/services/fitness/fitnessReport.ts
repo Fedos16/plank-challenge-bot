@@ -36,11 +36,16 @@ async function postWeekReport(bot: BotLike, ch: Challenge, weekNumber: number) {
 
   const { week, totals } = report;
   const title = `<b>${escapeHtml(ch.title)}</b>`;
-  const passed = `${totals.passed} из ${totals.inGame}`;
-  const text =
-    week.state === 'current'
-      ? `📊 ${title}: неделя ${week.number}\nНорму уже закрыли ${passed}, до конца недели ${week.daysLeft} дн.`
-      : `🏁 ${title}: неделя ${week.number} закрыта\nНорму закрыли ${passed}.`;
+  const current = week.state === 'current';
+  // главное — личный результат: сначала кто приблизился к цели, потом норма тренировок
+  const facts = [
+    totals.withGoal ? `к цели ${current ? 'уже ' : ''}приблизились ${totals.closer} из ${totals.withGoal}` : null,
+    `норму закрыли ${totals.passed} из ${totals.inGame}`,
+  ].filter(Boolean);
+  const summary = facts.join(', ');
+  const text = current
+    ? `📊 ${title}: неделя ${week.number}\n${summary[0]!.toUpperCase()}${summary.slice(1)}. До конца недели ${week.daysLeft} дн.`
+    : `🏁 ${title}: неделя ${week.number} закрыта\n${summary[0]!.toUpperCase()}${summary.slice(1)}.`;
 
   let username: string | undefined;
   try {
