@@ -78,21 +78,15 @@ const stateText = computed(() => {
 
 const isCurrent = computed(() => report.value?.week.state === 'current');
 
-/**
- * Общий прогресс челленджа по времени: сколько дней позади, и где на этой шкале смотримая
- * неделя. У бессрочного челленджа шкалы нет.
- */
+/** Общий прогресс челленджа по времени. У бессрочного челленджа шкалы нет. */
 const timeline = computed(() => {
   const r = report.value;
   const total = r?.challenge.daysTotal;
   if (!r || !total) return null;
   const day = Math.min(r.challenge.dayNumber, total);
-  const weekStart = (r.week.number - 1) * 7;
   const left = total - day;
   return {
     percent: Math.round((day / total) * 100),
-    weekLeft: (weekStart / total) * 100,
-    weekWidth: (Math.min(7, total - weekStart) / total) * 100,
     dayText: `день ${day} из ${total}`,
     leftText: left > 0 ? `${plural(left, 'остался', 'осталось', 'осталось')} ${left} ${plural(left, 'день', 'дня', 'дней')}` : 'финиш',
   };
@@ -180,16 +174,23 @@ const highlights = computed(() => {
   const rows = report.value?.rows ?? [];
   const best = (pick: (r: WeekReportRow) => number) =>
     rows.reduce<WeekReportRow | null>((acc, r) => (pick(r) > (acc ? pick(acc) : 0) ? r : acc), null);
+  // подпись — ровно две строки у всех плиток: разбивка задана здесь, а не шириной экрана
   const cards = [
-    { key: 'goal', label: 'Дальше всех к цели', pick: (r: WeekReportRow) => r.goal?.deltaPercent ?? 0, unit: () => 'пути', suffix: '%' },
+    {
+      key: 'goal',
+      label: ['Дальше всех', 'к цели'],
+      pick: (r: WeekReportRow) => r.goal?.deltaPercent ?? 0,
+      unit: () => 'пути',
+      suffix: '%',
+    },
     {
       key: 'workouts',
-      label: 'Больше тренировок',
+      label: ['Больше всех', 'тренировок'],
       pick: (r: WeekReportRow) => r.done,
       unit: (v: number) => plural(v, 'тренировка', 'тренировки', 'тренировок'),
     },
-    { key: 'minutes', label: 'Дольше всех', pick: (r: WeekReportRow) => r.minutes, unit: () => 'минут' },
-    { key: 'kcal', label: 'Больше всех сжёг', pick: (r: WeekReportRow) => r.kcal, unit: () => 'ккал' },
+    { key: 'minutes', label: ['Дольше всех', 'тренировался'], pick: (r: WeekReportRow) => r.minutes, unit: () => 'минут' },
+    { key: 'kcal', label: ['Больше всех', 'сжёг'], pick: (r: WeekReportRow) => r.kcal, unit: () => 'ккал' },
   ];
   return cards.flatMap((c) => {
     const top = best(c.pick);
@@ -234,7 +235,6 @@ watch(
         <div v-if="timeline" class="timeline" :aria-label="`Челлендж: ${timeline.dayText}`">
           <div class="timeline-bar">
             <span class="timeline-fill" :style="{ width: timeline.percent + '%' }" />
-            <span class="timeline-week" :style="{ left: timeline.weekLeft + '%', width: timeline.weekWidth + '%' }" />
           </div>
           <div class="timeline-legend">
             <span>{{ timeline.dayText }}</span>
@@ -347,7 +347,9 @@ watch(
         <p class="compare-hint">Цели у всех свои, так что это просто цифры недели, а не таблица победителей.</p>
         <div v-if="highlights.length" class="bests">
           <div v-for="h in highlights" :key="h.key" class="best" :class="`best-${h.key}`">
-            <div class="best-label">{{ h.label }}</div>
+            <div class="best-label">
+              <span v-for="line in h.label" :key="line">{{ line }}</span>
+            </div>
             <div class="best-value">
               {{ h.value }}<span class="best-unit">{{ h.unit }}</span>
             </div>
@@ -435,7 +437,7 @@ watch(
   font-size: 14px;
   color: var(--hint);
 }
-/* общий прогресс челленджа: тонкая шкала, на ней рамкой — смотримая неделя */
+/* общий прогресс челленджа: тонкая шкала прошедших дней */
 .timeline {
   position: relative;
   margin-top: 14px;
@@ -452,15 +454,6 @@ watch(
   border-radius: 2px;
   background: var(--text);
   opacity: 0.75;
-}
-.timeline-week {
-  position: absolute;
-  top: -4px;
-  height: 12px;
-  min-width: 6px;
-  border: 1.5px solid var(--accent);
-  border-radius: 4px;
-  box-sizing: border-box;
 }
 .timeline-legend {
   display: flex;
@@ -775,11 +768,20 @@ watch(
   --tone: var(--amber);
 }
 .best-label {
+  display: flex;
+  flex-direction: column;
   font-size: 11px;
   font-weight: 700;
+  line-height: 1.3;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--hint);
+}
+/* каждая строка подписи — своя; на совсем узком экране обрежется, а не перенесётся в третью */
+.best-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .best-value {
   font-family: var(--display);
