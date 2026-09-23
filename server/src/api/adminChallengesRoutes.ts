@@ -18,7 +18,7 @@ import {
   reinstate,
   unforgiveWeek,
 } from '../services/fitness/evaluation';
-import { announceWeekResults } from '../services/fitness/fitnessReport';
+import { announceWeekResults, sendWeekSummaryNow } from '../services/fitness/fitnessReport';
 import { listWorkouts, setWorkoutExcluded, setWorkoutForceCounted } from '../services/fitness/workouts';
 import { listIngests } from '../services/ingestLog';
 
@@ -259,6 +259,20 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
     const created = await evaluateClosedWeeks(ch, { now });
     const told = await announceWeekResults(ch, created, now);
     return { ok: true, created: created.length, ...told };
+  });
+
+  // Сводка в чат прямо сейчас: как идёт текущая неделя (после конца челленджа — последний итог)
+  app.post('/:id/week-summary', async (req, reply) => {
+    const ch = await requireFitness((req.params as { id: string }).id, reply);
+    if (!ch) return;
+    try {
+      const res = await sendWeekSummaryNow(ch);
+      if ('error' in res) return reply.code(400).send(res);
+      return { ok: true };
+    } catch (err) {
+      req.log.warn({ err }, 'сводка недели не отправлена');
+      return reply.code(502).send({ error: 'send_failed' });
+    }
   });
 }
 

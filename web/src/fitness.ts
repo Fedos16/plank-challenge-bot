@@ -322,6 +322,10 @@ const ERROR_TEXT: Record<string, string> = {
   bad_week_close_time: 'Время в формате ЧЧ:ММ',
   bad_chat_id: 'ID чата должен быть числом',
   bad_chat_thread_id: 'ID топика — целое число больше нуля',
+  no_chat: 'Сначала укажите ID чата в настройках',
+  bot_disabled: 'Бот на сервере выключен',
+  nothing_to_report: 'Пока нечего отправлять: челлендж не начался',
+  send_failed: 'Telegram не принял сообщение — бот добавлен в группу и может писать в топик?',
   join_closed: 'Набор в этот челлендж закрыт',
 };
 

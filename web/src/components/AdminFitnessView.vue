@@ -185,6 +185,12 @@ async function evaluateNow() {
   }
 }
 
+async function sendWeekSummary() {
+  const id = selectedId.value;
+  if (!id || !(await confirmAction('Отправить сводку текущей недели в чат челленджа?'))) return;
+  await run(() => api.adminSendWeekSummary(id).then(() => undefined), 'Сводка отправлена');
+}
+
 async function weekAction(row: AdminWeekRow, action: 'forgive' | 'unforgive' | 'recalc') {
   const id = selectedId.value;
   if (!id) return;
@@ -584,6 +590,14 @@ onMounted(async () => {
             Кнопка нужна, если не хочется ждать ближайшего прохода планировщика.
           </div>
           <button class="btn secondary" @click="evaluateNow">Подвести итоги сейчас</button>
+          <div class="muted" style="margin: 14px 0 10px">
+            Сводку в чат можно отправить в любой момент: кто сколько сделал на текущей неделе и сколько
+            у кого жизней. После конца челленджа уйдёт итог последней недели.
+          </div>
+          <button class="btn secondary" :disabled="!settings.chatId" @click="sendWeekSummary">
+            📣 Отправить сводку в чат
+          </button>
+          <div v-if="!settings.chatId" class="muted" style="margin-top: 6px">Сначала укажите ID чата в настройках.</div>
         </div>
 
         <div v-for="week in weeks" :key="week.weekNumber" class="card">

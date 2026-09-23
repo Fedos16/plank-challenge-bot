@@ -205,6 +205,8 @@ export const api = {
       `/admin/challenges/${id}/evaluate`,
       { method: 'POST' },
     ),
+  adminSendWeekSummary: (id: number) =>
+    request<{ ok: boolean }>(`/admin/challenges/${id}/week-summary`, { method: 'POST' }),
 
   // --- админка челленджей по id (фитнес) ---
   adminListChallenges: () => request<{ rows: AdminChallengeRow[] }>('/admin/challenges'),

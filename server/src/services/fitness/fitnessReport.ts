@@ -1,11 +1,12 @@
 import type { Challenge } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
-import { dateToDay, dayToDate } from '../../lib/time';
-import { weekCloseInstant, weekRange } from '../../lib/weeks';
-import { challengeEndDay } from '../challenge';
+import { dateToDay, dayjs, dayRange, dayToDate, todayDay } from '../../lib/time';
+import { weekCloseInstant, weekIndexOf, weekRange } from '../../lib/weeks';
+import { challengeEndDay, challengeTimeline } from '../challenge';
 import { escapeHtml } from '../report';
 import { displayName } from '../users';
 import { livesOf, type CreatedWeekResult, type UpgradedWeek } from './evaluation';
+import { getFitnessLeaderboard } from './fitnessLeaderboard';
 
 /** Старше этого итог недели — уже история: при догоне простоя о нём в ЛС не пишем. */
 const FRESH_MS = 7 * 86_400_000;
@@ -42,6 +43,59 @@ export async function buildWeekSummary(ch: Challenge, weekIndex: number): Promis
     else lines.push(`✅ ${name} — ${score} · ${hearts(state?.livesAfter ?? lives.left, lives.total)}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * Как идёт текущая неделя — сводка по запросу, в любой момент. Порядок — как в рейтинге.
+ * null — челлендж сейчас не идёт.
+ */
+export async function buildWeekProgress(ch: Challenge): Promise<string | null> {
+  if (challengeTimeline(ch).phase !== 'running') return null;
+  const startDay = dateToDay(ch.startDate);
+  const today = todayDay(ch.timezone);
+  const weekIndex = weekIndexOf(startDay, today);
+  const week = weekRange(startDay, weekIndex, challengeEndDay(ch));
+  if (!week) return null;
+
+  const daysLeft = dayRange(today, week.end).length;
+  const lines = [
+    `📊 <b>${escapeHtml(ch.title)}: неделя ${weekIndex + 1}</b>`,
+    `До конца недели ${daysLeft} дн., последний день — ${dayjs(week.end).format('DD.MM')}`,
+    '',
+  ];
+  for (const r of await getFitnessLeaderboard(ch, 0)) {
+    const name = escapeHtml(r.name);
+    const lives = hearts(r.livesLeft, r.livesTotal);
+    if (r.eliminated) lines.push(`☠️ ${name} — вне зачёта`);
+    else if (!r.week) lines.push(`⏳ ${name} · ${lives}`);
+    else {
+      const mark = r.week.done >= r.week.required ? '✅' : '⏳';
+      lines.push(`${mark} ${name} — ${r.week.done}/${r.week.required} · ${lives}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+export type SendSummaryError = 'no_chat' | 'bot_disabled' | 'nothing_to_report';
+
+/**
+ * Сводка в чат по кнопке админа: пока челлендж идёт — текущая неделя, после — итог последней
+ * закрытой. В DailyReport не пишется: ручная отправка не должна отменять автоматическую.
+ */
+export async function sendWeekSummaryNow(ch: Challenge): Promise<{ error: SendSummaryError } | { content: string }> {
+  if (!ch.chatId) return { error: 'no_chat' };
+  const { bot } = await import('../../bot/bot');
+  if (!bot) return { error: 'bot_disabled' };
+
+  let content = await buildWeekProgress(ch);
+  if (!content) {
+    const last = await prisma.weekResult.findFirst({ where: { challengeId: ch.id }, orderBy: { weekIndex: 'desc' } });
+    if (!last) return { error: 'nothing_to_report' };
+    content = await buildWeekSummary(ch, last.weekIndex);
+  }
+  const { sendToChallengeChat } = await import('../../bot/challengeChat');
+  await sendToChallengeChat(bot.api, ch, content, { parse_mode: 'HTML' });
+  return { content };
 }
 
 /** Хорошая новость в ЛС: опоздавшая синхронизация закрыла норму уже оценённой недели. */
