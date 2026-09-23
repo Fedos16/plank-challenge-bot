@@ -16,7 +16,7 @@ import WeekStrip from './WeekStrip.vue';
 const props = defineProps<{ challengeId: number }>();
 const emit = defineEmits<{ (e: 'back'): void; (e: 'left'): void }>();
 
-type Sub = 'overview' | 'workouts' | 'food' | 'board' | 'body' | 'more';
+type Sub = 'overview' | 'workouts' | 'food' | 'body' | 'more';
 const sub = ref<Sub>('overview');
 const data = ref<FitnessOverview | null>(null);
 const loading = ref(true);
@@ -219,7 +219,6 @@ watch(() => props.challengeId, load);
           <button :class="{ active: sub === 'overview' }" @click="sub = 'overview'">Обзор</button>
           <button :class="{ active: sub === 'workouts' }" @click="sub = 'workouts'">Тренировки</button>
           <button :class="{ active: sub === 'food' }" @click="sub = 'food'">Еда</button>
-          <button :class="{ active: sub === 'board' }" @click="sub = 'board'">Рейтинг</button>
           <button :class="{ active: sub === 'body' }" @click="sub = 'body'">Тело</button>
           <button :class="{ active: sub === 'more' }" @click="sub = 'more'">Ещё</button>
         </div>
@@ -308,6 +307,9 @@ watch(() => props.challengeId, load);
             <div class="bar"><div class="bar-fill time" :style="{ width: timePercent + '%' }" /></div>
           </div>
 
+          <!-- Рейтинг, прогресс всех к цели и лента -->
+          <FitnessLeaderboard :challenge-id="challengeId" :overview="data" />
+
           <!-- История недель: от свежих к старым, каждая — полоской дней -->
           <div v-if="data.game.history.length" class="card">
             <h3>Недели</h3>
@@ -333,9 +335,6 @@ watch(() => props.challengeId, load);
 
         <!-- ЕДА: дневник личный, другим участникам не виден -->
         <FoodTab v-else-if="sub === 'food'" />
-
-        <!-- РЕЙТИНГ -->
-        <FitnessLeaderboard v-else-if="sub === 'board'" :challenge-id="challengeId" :overview="data" />
 
         <!-- ТЕЛО -->
         <BodyTab v-else-if="sub === 'body'" :overview="data" @changed="refresh" />

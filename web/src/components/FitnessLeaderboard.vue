@@ -76,13 +76,16 @@ function feedMeta(w: FeedItem): string {
 onMounted(load);
 </script>
 
+<!--
+  Часть «Обзора»: рейтинг, прогресс всех к цели и лента. Ждут ответа сервера только рейтинг и лента,
+  прогресс рисуется сразу.
+-->
 <template>
-  <div v-if="loading" class="center">Загрузка…</div>
-  <div v-else-if="error" class="card"><div class="error-text">{{ error }}</div></div>
-
-  <template v-else>
-    <div class="card">
-      <h3>Рейтинг</h3>
+  <div class="card">
+    <h3>Рейтинг</h3>
+    <div v-if="loading" class="muted">Загрузка…</div>
+    <div v-else-if="error" class="error-text">{{ error }}</div>
+    <template v-else>
       <div
         v-for="(r, i) in rows"
         :key="r.participationId"
@@ -107,28 +110,31 @@ onMounted(load);
         Цели у всех разные, поэтому места — по дисциплине: кто в игре, у кого больше жизней, кто ровнее
         закрывает норму.
       </div>
-    </div>
+    </template>
+  </div>
 
-    <div class="card">
-      <h3>Прогресс к цели</h3>
-      <div v-for="p in overview.participants" :key="p.participationId" class="person">
-        <div class="bar-head">
-          <span class="person-name">
-            {{ p.goalType ? GOAL_EMOJI[p.goalType] : '⏳' }} {{ p.name }}
-            <span v-if="p.isMe" class="muted">· вы</span>
-          </span>
-          <span v-if="p.progressPercent !== null" class="fire">{{ p.progressPercent }}%</span>
-          <span v-else class="muted">{{ p.goalType ? GOAL_LABEL[p.goalType] : 'цель не выбрана' }}</span>
-        </div>
-        <div v-if="p.progressPercent !== null" class="bar">
-          <div class="bar-fill" :style="{ width: p.progressPercent + '%' }" />
-        </div>
-        <div v-if="bodyLine(p)" class="muted">{{ bodyLine(p) }}</div>
+  <div class="card">
+    <h3>Прогресс к цели</h3>
+    <div v-for="p in overview.participants" :key="p.participationId" class="person">
+      <div class="bar-head">
+        <span class="person-name">
+          {{ p.goalType ? GOAL_EMOJI[p.goalType] : '⏳' }} {{ p.name }}
+          <span v-if="p.isMe" class="muted">· вы</span>
+        </span>
+        <span v-if="p.progressPercent !== null" class="fire">{{ p.progressPercent }}%</span>
+        <span v-else class="muted">{{ p.goalType ? GOAL_LABEL[p.goalType] : 'цель не выбрана' }}</span>
       </div>
+      <div v-if="p.progressPercent !== null" class="bar">
+        <div class="bar-fill" :style="{ width: p.progressPercent + '%' }" />
+      </div>
+      <div v-if="bodyLine(p)" class="muted">{{ bodyLine(p) }}</div>
     </div>
+  </div>
 
-    <div class="card">
-      <h3>Лента тренировок</h3>
+  <div v-if="!error" class="card">
+    <h3>Лента тренировок</h3>
+    <div v-if="loading" class="muted">Загрузка…</div>
+    <template v-else>
       <div v-for="w in feed" :key="w.id" class="feed-item">
         <div class="ico">{{ SPORT_EMOJI[w.sport] ?? '💪' }}</div>
         <div class="grow">
@@ -142,8 +148,8 @@ onMounted(load);
         </div>
       </div>
       <div v-if="!feed.length" class="muted">За последние две недели тренировок не было.</div>
-    </div>
-  </template>
+    </template>
+  </div>
 </template>
 
 <style scoped>
