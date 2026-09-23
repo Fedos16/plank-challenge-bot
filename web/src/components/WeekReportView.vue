@@ -166,7 +166,7 @@ const highlights = computed(() => {
   const cards = [
     {
       key: 'goal',
-      label: ['Дальше всех', 'к цели'],
+      label: ['Ближе всех', 'к цели'],
       pick: (r: WeekReportRow) => r.goal?.deltaPercent ?? 0,
       unit: () => 'пути',
       suffix: '%',
