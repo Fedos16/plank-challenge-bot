@@ -256,7 +256,8 @@ onMounted(load);
       <UnitToggle :model-value="muscleUnit" label="Мышцы считать в" :disabled="busy" @update:model-value="setMuscleUnit" />
       <button class="btn" :disabled="busy" @click="addWeight">Записать</button>
       <div class="muted" style="margin-top: 8px">
-        С умных весов вес приходит сам — подключение в группе «Взвешивание».
+        С умных весов вес приходит сам — подключение в группе «Взвешивание». В день хранится одно
+        взвешивание — первое, утреннее: повторный ввод за тот же день исправляет его.
       </div>
     </div>
 

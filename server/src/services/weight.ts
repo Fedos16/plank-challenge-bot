@@ -81,11 +81,20 @@ export interface SaveResult {
 /** Записи ближе этого — одно взвешивание, пришедшее разными путями. */
 const SAME_WEIGH_IN_MS = 60 * 1000;
 
+/** Взвешивание дня. Записей за день бывает больше одной только в данных до правила «одна в день». */
+async function firstOfDay(userId: number, day: Date): Promise<WeightEntry | null> {
+  return prisma.weightEntry.findFirst({ where: { userId, day }, orderBy: { measuredAt: 'asc' } });
+}
+
 /**
  * Сохраняет взвешивания, пришедшие с телефона участника.
  *
  * Одно и то же взвешивание приходит повторно (ретраи вебхука, повторная выгрузка истории),
  * поэтому пишем идемпотентно: ключ — момент взвешивания у этого участника.
+ *
+ * В день у участника одно взвешивание — первое, утреннее: замеры в одно время суток сравнимы,
+ * а днём вес скачет от еды и воды. Более позднее взвешивание того же дня не записываем,
+ * более раннее заменяет запись дня.
  */
 export async function saveMeasurements(
   ownerId: number,
@@ -104,7 +113,7 @@ export async function saveMeasurements(
       sourceOwnerId: ownerId,
     };
 
-    // Одно взвешивание из разных источников (Health Connect и облако Zepp) расходится
+    // Одно взвешивание, записанное в хранилище здоровья двумя приложениями, расходится
     // по времени на секунды — ищем соседа в окне, а не только точное совпадение
     const existing = await prisma.weightEntry.findFirst({
       where: {
@@ -128,7 +137,7 @@ export async function saveMeasurements(
         muscle: data.muscle ?? existing.muscle,
         sourceOwnerId: ownerId,
       };
-      // облако Zepp каждый час присылает всю историю — неизменные записи не трогаем
+      // хаб шлёт скользящее окно, одно взвешивание приходит много раз — неизменные не трогаем
       const same =
         merged.weightKg === existing.weightKg &&
         merged.bodyFat === existing.bodyFat &&
@@ -136,6 +145,14 @@ export async function saveMeasurements(
         merged.muscle === existing.muscle &&
         existing.sourceOwnerId === ownerId;
       if (!same) result.updated.push(await prisma.weightEntry.update({ where: { id: existing.id }, data: merged }));
+      continue;
+    }
+
+    const dayEntry = await firstOfDay(ownerId, data.day);
+    if (dayEntry) {
+      // за день уже есть взвешивание раньше этого — оно и остаётся
+      if (dayEntry.measuredAt <= m.measuredAt) continue;
+      result.updated.push(await prisma.weightEntry.update({ where: { id: dayEntry.id }, data }));
       continue;
     }
 
@@ -177,7 +194,8 @@ function manualPercent(v: number | null | undefined): number | null | 'bad' {
 
 /**
  * Взвешивание, введённое руками: у кого нет умных весов, тот ведёт вес сам.
- * От записей с весов отличается пустым sourceOwnerId. Повтор на тот же момент обновляет запись.
+ * От записей с весов отличается пустым sourceOwnerId. В день одно взвешивание: если за этот
+ * день запись уже есть, ручной ввод её исправляет, а незаполненный состав не стирает известный.
  */
 export async function addManualWeight(
   userId: number,
@@ -211,6 +229,18 @@ export async function addManualWeight(
     muscle,
     day: dayToDate(challengeDay(measuredAt, tz())),
   };
+  const dayEntry = await firstOfDay(userId, data.day);
+  if (dayEntry) {
+    return prisma.weightEntry.update({
+      where: { id: dayEntry.id },
+      data: {
+        weightKg: data.weightKg,
+        bodyFat: bodyFat ?? dayEntry.bodyFat,
+        water: water ?? dayEntry.water,
+        muscle: muscle ?? dayEntry.muscle,
+      },
+    });
+  }
   return prisma.weightEntry.upsert({
     where: { userId_measuredAt: { userId, measuredAt } },
     create: { userId, measuredAt, ...data },
