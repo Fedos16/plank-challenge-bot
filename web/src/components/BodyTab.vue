@@ -34,7 +34,9 @@ const loading = ref(true);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
-const weightForm = reactive({ weightKg: '', bodyFat: '', muscle: '' });
+/** Сегодня по часам телефона: день взвешивания выбирают по нему, будущее недоступно. */
+const localToday = () => new Date().toLocaleDateString('sv-SE');
+const weightForm = reactive({ weightKg: '', bodyFat: '', muscle: '', day: localToday() });
 const measureForm = reactive({ kind: 'waist' as MeasurementKind, value: '' });
 
 /** В чём вводим и показываем мышцы. В базе всегда доля — килограммы сервер выводит из веса. */
@@ -145,13 +147,19 @@ function addWeight() {
     return;
   }
   const muscle = numOrNull(weightForm.muscle);
+  // Сегодня — момент ввода. Прошлый день — его утро: в дне хранится одно взвешивание, утреннее,
+  // а 9 часов по часам телефона попадают в тот же день по Москве почти из любого пояса
+  const measuredAt =
+    weightForm.day && weightForm.day !== localToday() ? new Date(`${weightForm.day}T09:00:00`).toISOString() : undefined;
   void run(async () => {
     weight.value = await api.addManualWeight({
       weightKg,
       bodyFat: numOrNull(weightForm.bodyFat),
       ...(muscleUnit.value === 'kg' ? { muscleKg: muscle } : { muscle }),
+      ...(measuredAt ? { measuredAt } : {}),
     });
     weightForm.weightKg = weightForm.bodyFat = weightForm.muscle = '';
+    weightForm.day = localToday();
     emit('changed');
   });
 }
@@ -253,11 +261,16 @@ onMounted(load);
           <input v-model="weightForm.muscle" inputmode="decimal" placeholder="—" @keyup.enter="addWeight" />
         </label>
       </div>
+      <label class="field">
+        <span class="lbl">Дата</span>
+        <input v-model="weightForm.day" type="date" :max="localToday()" />
+      </label>
       <UnitToggle :model-value="muscleUnit" label="Мышцы считать в" :disabled="busy" @update:model-value="setMuscleUnit" />
       <button class="btn" :disabled="busy" @click="addWeight">Записать</button>
       <div class="muted" style="margin-top: 8px">
         С умных весов вес приходит сам — подключение в группе «Взвешивание». В день хранится одно
-        взвешивание — первое, утреннее: повторный ввод за тот же день исправляет его.
+        взвешивание — первое, утреннее: повторный ввод за тот же день исправляет его. Забыли
+        записать — выберите дату, и взвешивание встанет в тот день.
       </div>
     </div>
 
