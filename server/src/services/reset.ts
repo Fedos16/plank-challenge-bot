@@ -37,9 +37,9 @@ export async function resetParticipants(challengeId: number): Promise<number> {
   });
 }
 
-/** Отвязать чат от челленджа (сбросить chatId). */
+/** Отвязать чат от челленджа (сбросить chatId и топик). */
 export async function unbindChat(challengeId: number): Promise<void> {
-  await prisma.challenge.update({ where: { id: challengeId }, data: { chatId: null } });
+  await prisma.challenge.update({ where: { id: challengeId }, data: { chatId: null, chatThreadId: null } });
 }
 
 /**

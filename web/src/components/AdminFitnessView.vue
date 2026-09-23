@@ -133,6 +133,7 @@ async function save() {
       maxWorkoutsPerDay: s.maxWorkoutsPerDay,
       weekCloseTime: s.weekCloseTime,
       chatId: s.chatId,
+      chatThreadId: s.chatThreadId,
       joinOpen: s.joinOpen,
       isActive: s.isActive,
     });
@@ -444,6 +445,10 @@ onMounted(async () => {
         </div>
         <label class="field"><span class="lbl">Часовой пояс</span><input v-model="settings.timezone" /></label>
         <label class="field"><span class="lbl">ID чата для сообщений</span><input v-model="settings.chatId" placeholder="напр. -1001234567890" /></label>
+        <label class="field"><span class="lbl">ID топика</span><input v-model.number="settings.chatThreadId" inputmode="numeric" placeholder="пусто — общий чат" /></label>
+        <div class="muted" style="margin: -4px 0 12px">
+          Для группы с темами: напишите /chatid в нужном топике — бот ответит обоими ID.
+        </div>
         <label class="field check">
           <input type="checkbox" v-model="settings.joinOpen" />
           <span class="lbl">Набор открыт — челлендж виден в «Ещё доступно»</span>

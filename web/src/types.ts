@@ -167,6 +167,8 @@ export interface AdminChallenge {
   fineAmount: number;
   fakeFineMultiplier: number;
   chatId: string | null;
+  /** Топик в группе с темами; null — общий чат. */
+  chatThreadId: number | null;
   freezeStreakOnSick: boolean;
   freezeEveryDays: number;
   maxFreezes: number;
@@ -578,6 +580,8 @@ export interface AdminFitnessChallenge extends ChallengeTimeline, FitnessSetting
   timezone: string;
   durationDays: number | null;
   chatId: string | null;
+  /** Топик в группе с темами; null — общий чат. */
+  chatThreadId: number | null;
 }
 
 export type AdminFitnessInput = Partial<
@@ -585,6 +589,7 @@ export type AdminFitnessInput = Partial<
     AdminFitnessChallenge,
     | 'title' | 'description' | 'rulesText' | 'timezone' | 'isActive' | 'joinOpen' | 'startDate'
     | 'weeklyWorkouts' | 'lives' | 'minWorkoutMin' | 'maxWorkoutsPerDay' | 'weekCloseTime' | 'chatId'
+    | 'chatThreadId'
   >
 > & { durationDays?: number | null | '' };
 

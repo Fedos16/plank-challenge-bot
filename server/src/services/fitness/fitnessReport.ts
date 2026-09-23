@@ -122,7 +122,8 @@ export async function announceWeekResults(
   if (await prisma.dailyReport.findUnique({ where: key })) return { dm, chat: false };
 
   const content = await buildWeekSummary(ch, lastWeek);
-  await bot.api.sendMessage(Number(ch.chatId), content, { parse_mode: 'HTML' });
+  const { sendToChallengeChat } = await import('../../bot/challengeChat');
+  await sendToChallengeChat(bot.api, ch, content, { parse_mode: 'HTML' });
   await prisma.dailyReport.create({ data: { challengeId: ch.id, day: dayToDate(week.end), content } });
   return { dm, chat: true };
 }

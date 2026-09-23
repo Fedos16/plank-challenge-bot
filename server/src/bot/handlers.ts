@@ -38,6 +38,11 @@ function fromTelegramId(ctx: Context): bigint | null {
   return ctx.from ? BigInt(ctx.from.id) : null;
 }
 
+/** Топик, из которого пришло сообщение; null — общий чат или группа без тем. */
+function topicId(ctx: Context): number | null {
+  return ctx.msg?.is_topic_message ? (ctx.msg.message_thread_id ?? null) : null;
+}
+
 export function registerHandlers(): void {
   if (!bot) return; // бот выключен (нет BOT_TOKEN)
 
@@ -148,11 +153,14 @@ export function registerHandlers(): void {
     });
   });
 
-  // /chatid — узнать id текущего чата (для настройки мониторинга), только админ
+  // /chatid — узнать id текущего чата и топика (для настройки мониторинга), только админ
   bot.command('chatid', async (ctx) => {
     const tgId = fromTelegramId(ctx);
     if (!tgId || !(await isAdminTg(tgId))) return;
-    await ctx.reply(`ID этого чата: <code>${ctx.chat.id}</code>`, { parse_mode: 'HTML' });
+    const topic = topicId(ctx);
+    const lines = [`ID этого чата: <code>${ctx.chat.id}</code>`];
+    if (topic !== null) lines.push(`ID топика: <code>${topic}</code>`);
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
   });
 
   // /bindchat — привязать текущий чат как мониторимый (только админ, в группе)
@@ -164,12 +172,16 @@ export function registerHandlers(): void {
       await ctx.reply('Нет активного челленджа.');
       return;
     }
+    // в группе с темами отчёты и напоминания пойдут в топик, где вызвали команду
+    const topic = topicId(ctx);
     await prisma.challenge.update({
       where: { id: challenge.id },
-      data: { chatId: BigInt(ctx.chat.id) },
+      data: { chatId: BigInt(ctx.chat.id), chatThreadId: topic },
     });
     await ctx.reply(
-      `✅ Чат привязан к челленджу «${challenge.title}». Кружки отсюда теперь засчитываются.`,
+      topic === null
+        ? `✅ Чат привязан к челленджу «${challenge.title}». Кружки отсюда теперь засчитываются.`
+        : `✅ Чат привязан к челленджу «${challenge.title}». Отчёты и напоминания будут приходить в этот топик, кружки засчитываются из любого топика чата.`,
     );
     // публикуем красивые правила + кнопку открытия приложения и закрепляем их
     const rulesMsg = await ctx.reply(formatRulesMessageHtml(challenge), {

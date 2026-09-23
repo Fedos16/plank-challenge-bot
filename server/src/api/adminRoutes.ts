@@ -77,6 +77,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         /* игнор некорректного значения */
       }
     }
+    if (body.chatThreadId === null || body.chatThreadId === '') {
+      data.chatThreadId = null;
+    } else if (body.chatThreadId !== undefined) {
+      const topic = Number(body.chatThreadId);
+      if (Number.isSafeInteger(topic) && topic > 0) data.chatThreadId = topic;
+    }
 
     const updated = await prisma.challenge.update({ where: { id: ch.id }, data });
     return serializeChallenge(updated);
@@ -363,6 +369,7 @@ function serializeChallenge(ch: import('@prisma/client').Challenge) {
     fineAmount: ch.fineAmount,
     fakeFineMultiplier: ch.fakeFineMultiplier,
     chatId: ch.chatId ? ch.chatId.toString() : null,
+    chatThreadId: ch.chatThreadId,
     freezeStreakOnSick: ch.freezeStreakOnSick,
     freezeEveryDays: ch.freezeEveryDays,
     maxFreezes: ch.maxFreezes,

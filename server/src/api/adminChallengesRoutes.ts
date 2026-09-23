@@ -271,7 +271,8 @@ type SettingsError =
   | 'bad_min_workout'
   | 'bad_max_per_day'
   | 'bad_week_close_time'
-  | 'bad_chat_id';
+  | 'bad_chat_id'
+  | 'bad_chat_thread_id';
 
 /** Целое в диапазоне; вне диапазона — ошибка, а не молчаливая обрезка: админ должен это увидеть. */
 function intIn(v: unknown, min: number, max: number): number | null {
@@ -295,6 +296,7 @@ interface SettingsPatch {
   maxWorkoutsPerDay?: number;
   weekCloseTime?: string;
   chatId?: bigint | null;
+  chatThreadId?: number | null;
 }
 
 /** Разбирает только присланные поля: годится и для создания, и для частичной правки. */
@@ -361,6 +363,15 @@ function parseSettings(body: Record<string, unknown>): SettingsPatch | SettingsE
     }
   }
 
+  // топик в группе с темами; пусто — общий чат
+  if (body.chatThreadId === null || body.chatThreadId === '') {
+    data.chatThreadId = null;
+  } else if (body.chatThreadId !== undefined) {
+    const topic = intIn(body.chatThreadId, 1, 2 ** 31 - 1);
+    if (topic === null) return 'bad_chat_thread_id';
+    data.chatThreadId = topic;
+  }
+
   return data;
 }
 
@@ -377,6 +388,7 @@ function serialize(ch: Challenge) {
     timezone: ch.timezone,
     durationDays: ch.durationDays,
     chatId: ch.chatId ? ch.chatId.toString() : null,
+    chatThreadId: ch.chatThreadId,
     ...challengeTimeline(ch),
     ...fitnessSettings(ch),
   };

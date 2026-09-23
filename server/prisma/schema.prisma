@@ -48,6 +48,7 @@ model Challenge {
   fineAmount         Int      @default(500)
   fakeFineMultiplier Int      @default(2)
   chatId             BigInt? // мониторимая группа
+  chatThreadId       Int? // топик в группе с темами, куда бот пишет отчёты; пусто — общий чат
   freezeStreakOnSick Boolean  @default(true)
   freezeEveryDays    Int      @default(30) // сколько дней подряд даёт одну заморозку серии (0 = выключено)
   maxFreezes         Int      @default(3) // сколько заморозок можно держать на руках (0 = выключено)

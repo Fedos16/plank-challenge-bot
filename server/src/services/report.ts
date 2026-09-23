@@ -188,7 +188,8 @@ export async function sendDailyReport(
         username = undefined;
       }
       const { appLaunchKeyboard } = await import('../bot/keyboards');
-      await bot.api.sendMessage(Number(challenge.chatId), content, {
+      const { sendToChallengeChat } = await import('../bot/challengeChat');
+      await sendToChallengeChat(bot.api, challenge, content, {
         parse_mode: 'HTML',
         reply_markup: username ? appLaunchKeyboard(username) : undefined,
       });

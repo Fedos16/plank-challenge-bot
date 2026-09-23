@@ -321,6 +321,7 @@ const ERROR_TEXT: Record<string, string> = {
   bad_max_per_day: 'В зачёт за день — от 1 до 3 тренировок',
   bad_week_close_time: 'Время в формате ЧЧ:ММ',
   bad_chat_id: 'ID чата должен быть числом',
+  bad_chat_thread_id: 'ID топика — целое число больше нуля',
   join_closed: 'Набор в этот челлендж закрыт',
 };
 

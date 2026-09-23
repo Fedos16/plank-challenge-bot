@@ -333,7 +333,10 @@ function resetParticipantsData() {
 function unbindChatData() {
   void withConfirm('Отвязать чат от челленджа? Кружки перестанут засчитываться, пока не выполните /bindchat снова.', async () => {
     await api.adminResetChat();
-    if (settings.value) settings.value.chatId = null;
+    if (settings.value) {
+      settings.value.chatId = null;
+      settings.value.chatThreadId = null;
+    }
   }, 'Чат отвязан');
 }
 function resetAllData() {
@@ -401,6 +404,7 @@ onMounted(loadSettings);
       <label class="field"><span class="lbl">Время напоминания (HH:mm)</span><input v-model="settings.reminderTime" /></label>
       <label class="field"><span class="lbl">«Последний шанс» в ЛС (HH:mm, пусто — выкл)</span><input v-model="settings.lastChanceTime" /></label>
       <label class="field"><span class="lbl">ID чата для мониторинга</span><input v-model="settings.chatId" placeholder="напр. -1001234567890" /></label>
+      <label class="field"><span class="lbl">ID топика для отчётов и напоминаний</span><input v-model.number="settings.chatThreadId" inputmode="numeric" placeholder="пусто — общий чат" /></label>
       <label class="field" style="display: flex; align-items: center; gap: 10px">
         <input type="checkbox" style="width: auto" v-model="settings.freezeStreakOnSick" />
         <span class="lbl" style="margin: 0">Больничный замораживает серию</span>
