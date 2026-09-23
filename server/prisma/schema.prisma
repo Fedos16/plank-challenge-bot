@@ -328,6 +328,7 @@ model IngestLog {
   workouts            Int @default(0) // в запросе
   workoutsCreated     Int @default(0)
   workoutsUpdated     Int @default(0)
+  workoutsDeleted     Int @default(0) // помечено удалёнными по просьбе отправителя
   measurements        Int @default(0) // взвешиваний в запросе
   measurementsCreated Int @default(0)
   measurementsUpdated Int @default(0)

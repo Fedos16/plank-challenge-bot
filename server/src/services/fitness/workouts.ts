@@ -425,6 +425,35 @@ export async function deleteExternalWorkout(userId: number, source: string, exte
   return true;
 }
 
+/**
+ * Сверка окна: отправитель ручается, что прислал всё, что у него есть за интервал. Тренировки
+ * того же источника внутри интервала, которых в выгрузке не было, человек удалил у источника —
+ * помечаем тумбстоуном, как и адресное удаление.
+ *
+ * Вызывается только при явно указанном окне: у приложений-хабов его нет, и их скользящая выгрузка
+ * ничего не сносит. Ручные записи и другие источники не трогаем — фильтр по source.
+ */
+export async function reconcileExternalWindow(
+  userId: number,
+  source: string,
+  window: { from: Date; to: Date },
+  keepExternalIds: string[],
+): Promise<number> {
+  const keep = new Set(keepExternalIds);
+  const inside = await prisma.workout.findMany({
+    where: { userId, source, deletedAt: null, startedAt: { gte: window.from, lte: window.to } },
+  });
+
+  let removed = 0;
+  for (const w of inside) {
+    if (keep.has(w.externalId)) continue;
+    await prisma.workout.update({ where: { id: w.id }, data: { deletedAt: new Date(), duplicateOfId: null } });
+    await reassignDuplicates(userId, w.startedAt, w.durationSec);
+    removed += 1;
+  }
+  return removed;
+}
+
 /** Админ снимает тренировку с зачёта (аналог «фейка» в планке) или возвращает её. */
 export async function setWorkoutExcluded(
   workoutId: number,
