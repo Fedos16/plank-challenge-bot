@@ -10,7 +10,15 @@ import type {
   Workout,
 } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { daysBetweenISO, formatDateRu, formatDateTimeRu, formatTimeRu, todayISO } from '../helpers';
+import {
+  daysBetweenISO,
+  formatDateRu,
+  formatDateTimeRu,
+  formatDayHumanRu,
+  formatTimeRu,
+  todayISO,
+  todayInZone,
+} from '../helpers';
 import {
   GOAL_EMOJI,
   GOAL_LABEL,
@@ -23,9 +31,10 @@ import {
   formatNum,
   groupWorkoutsByWeek,
   hearts,
-  sessionTitle,
-  sportTitle,
+  toWorkoutRows,
   weekSummary,
+  workoutMeta,
+  type WorkoutRow,
 } from '../fitness';
 
 const challenges = ref<AdminChallengeRow[]>([]);
@@ -226,7 +235,7 @@ const moderatedWeeks = computed(() => {
   if (!s || !p) return [];
   const today = challengeDay(new Date().toISOString(), s.timezone);
   const currentWeek = today < s.startDate ? 0 : Math.floor(daysBetweenISO(s.startDate, today) / 7) + 1;
-  return groupWorkoutsByWeek(moderated.value, s.startDate, s.timezone).map((g) => ({
+  return groupWorkoutsByWeek(toWorkoutRows(moderated.value), s.startDate, s.timezone).map((g) => ({
     ...g,
     summary: weekSummary(closedWeek(p, g.weekNumber), g.weekNumber === currentWeek ? p.week : null),
   }));
@@ -240,13 +249,35 @@ async function afterModeration(id: number, p: AdminFitnessParticipant, weekNumbe
   await reloadGame();
 }
 
-async function setExcluded(p: AdminFitnessParticipant, w: Workout, weekNumber: number, excluded: boolean) {
+/** «Сегодня» в поясе челленджа — для дат «вчера», «пн, 21 сен», как в ленте и журнале. */
+const modToday = computed(() => (settings.value ? todayInZone(settings.value.timezone) : todayISO()));
+
+type Moderation = 'exclude' | 'include' | 'force' | 'unforce';
+
+const MODERATION_TOAST: Record<Moderation, string> = {
+  exclude: 'Тренировка отменена',
+  include: 'Тренировка засчитана',
+  force: 'Засчитана вручную',
+  unforce: 'Ручной зачёт снят',
+};
+
+/**
+ * Правка зачёта занятия целиком: у разрезанного часами занятия меняются все его записи.
+ * «Засчитать» мимо правил — ручной зачёт одной записи: он и так засчитывает всё занятие.
+ */
+async function moderate(p: AdminFitnessParticipant, row: WorkoutRow, weekNumber: number, action: Moderation) {
   const id = selectedId.value;
   if (!id) return;
   await run(async () => {
-    await api.adminExcludeWorkout(id, w.id, excluded);
+    if (action === 'exclude' || action === 'include') {
+      for (const w of row.items) await api.adminExcludeWorkout(id, w.id, action === 'exclude');
+    } else if (action === 'force') {
+      await api.adminForceCountWorkout(id, row.items[0]!.id, true);
+    } else {
+      for (const w of row.items.filter((x) => x.forceCounted)) await api.adminForceCountWorkout(id, w.id, false);
+    }
     await afterModeration(id, p, weekNumber);
-  }, excluded ? 'Тренировка отменена' : 'Тренировка засчитана');
+  }, MODERATION_TOAST[action]);
 }
 
 /** Последние выгрузки с телефона: видно, что приехало и включены ли нужные галочки. */
@@ -279,16 +310,6 @@ function summaryText(sync: IngestSync): string {
     return parts.length ? parts.join(' · ') : 'массивов нет';
   }
   return '';
-}
-
-/** Ручной зачёт: правило отсекло настоящую тренировку — короткую сессию или вторую за день. */
-async function setForceCounted(p: AdminFitnessParticipant, w: Workout, weekNumber: number, forceCounted: boolean) {
-  const id = selectedId.value;
-  if (!id) return;
-  await run(async () => {
-    await api.adminForceCountWorkout(id, w.id, forceCounted);
-    await afterModeration(id, p, weekNumber);
-  }, forceCounted ? 'Засчитана вручную' : 'Ручной зачёт снят');
 }
 
 function progressText(p: AdminFitnessParticipant): string {
@@ -482,32 +503,33 @@ onMounted(async () => {
                 <b>{{ g.weekNumber > 0 ? `Неделя ${g.weekNumber}` : 'До старта' }}</b>
                 <span class="muted">{{ g.summary }}</span>
               </div>
-              <div v-for="w in g.items" :key="w.id" class="list-item">
+              <!-- занятие одной строкой, как в ленте: кнопки действуют на все его записи -->
+              <div v-for="w in g.items" :key="w.key" class="list-item">
                 <div class="ico">{{ SPORT_EMOJI[w.sport] ?? '💪' }}</div>
                 <div class="grow">
                   <div>
-                    {{ sportTitle(w) }} · {{ w.durationMin }} мин
+                    {{ w.title }}
                     <span class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
-                    <span v-if="w.forceCounted" class="muted"> · засчитана вручную</span>
                   </div>
                   <div class="muted">
-                    {{ formatDateRu(challengeDay(w.startedAt, settings.timezone)) }}, {{ formatTimeRu(w.startedAt) }} ·
-                    {{ SOURCE_LABEL[w.source] ?? w.source }}
+                    {{ formatDayHumanRu(challengeDay(w.startedAt, settings.timezone), modToday) }},
+                    {{ formatTimeRu(w.startedAt) }} · {{ workoutMeta(w) }}
                   </div>
-                  <div v-if="w.session" class="muted">
-                    Часть занятия «{{ sessionTitle(w.session.parts) }}», вместе {{ w.session.durationMin }} мин
-                  </div>
+                  <div v-if="w.forceCounted" class="muted">Засчитана вручную</div>
+                  <div v-if="w.verdict === 'duplicate'" class="muted">В зачёт идёт та же тренировка из другого источника</div>
                 </div>
-                <button v-if="w.verdict === 'excluded'" class="btn small" @click="setExcluded(p, w, g.weekNumber, false)">
+                <button v-if="w.verdict === 'excluded'" class="btn small" @click="moderate(p, w, g.weekNumber, 'include')">
                   ✅ Засчитать
                 </button>
-                <button v-else-if="w.forceCounted" class="btn small secondary" @click="setForceCounted(p, w, g.weekNumber, false)">
+                <button v-else-if="w.forceCounted" class="btn small secondary" @click="moderate(p, w, g.weekNumber, 'unforce')">
                   Отменить
                 </button>
-                <button v-else-if="w.verdict === 'counted'" class="btn small secondary" @click="setExcluded(p, w, g.weekNumber, true)">
+                <button v-else-if="w.verdict === 'counted'" class="btn small secondary" @click="moderate(p, w, g.weekNumber, 'exclude')">
                   Отменить
                 </button>
-                <button v-else class="btn small" @click="setForceCounted(p, w, g.weekNumber, true)">✅ Засчитать</button>
+                <button v-else-if="w.verdict !== 'duplicate'" class="btn small" @click="moderate(p, w, g.weekNumber, 'force')">
+                  ✅ Засчитать
+                </button>
               </div>
             </div>
             <div v-if="!moderated.length" class="muted">Тренировок нет.</div>

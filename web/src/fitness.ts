@@ -99,21 +99,97 @@ export function challengeDay(iso: string, tz: string): string {
   return new Date(iso).toLocaleDateString('sv-SE', { timeZone: tz });
 }
 
-export interface WorkoutWeek {
+export interface WorkoutWeek<T> {
   /** 0 — тренировки до старта челленджа. */
   weekNumber: number;
-  items: Workout[];
+  items: T[];
 }
 
 /** Журнал по неделям челленджа, от свежих к старым; внутри недели порядок как пришёл. */
-export function groupWorkoutsByWeek(workouts: Workout[], startDate: string, tz: string): WorkoutWeek[] {
-  const byWeek = new Map<number, Workout[]>();
+export function groupWorkoutsByWeek<T extends { startedAt: string }>(
+  workouts: T[],
+  startDate: string,
+  tz: string,
+): WorkoutWeek<T>[] {
+  const byWeek = new Map<number, T[]>();
   for (const w of workouts) {
     const day = challengeDay(w.startedAt, tz);
     const weekNumber = day < startDate ? 0 : Math.floor(daysBetweenISO(startDate, day) / 7) + 1;
     byWeek.set(weekNumber, [...(byWeek.get(weekNumber) ?? []), w]);
   }
   return [...byWeek.entries()].sort((a, b) => b[0] - a[0]).map(([weekNumber, items]) => ({ weekNumber, items }));
+}
+
+/**
+ * Занятие одной строкой — как в ленте. Часы режут тренировку по видам активности, а в зачёт
+ * идёт занятие целиком: показывать его частями значит показывать не то, что засчитывается.
+ */
+export interface WorkoutRow {
+  /** id первой записи занятия — ключ строки. */
+  key: number;
+  /** Записи занятия, от ранней к поздней. У одиночной тренировки — одна. */
+  items: Workout[];
+  title: string;
+  /** Вид для иконки — у самой длинной части. */
+  sport: string;
+  source: string;
+  startedAt: string;
+  durationMin: number;
+  kcal: number | null;
+  distanceM: number | null;
+  /** Вердикт у частей одного занятия общий. */
+  verdict: Verdict;
+  forceCounted: boolean;
+  forceNote: string | null;
+  excludedNote: string | null;
+  note: string | null;
+}
+
+/** Журнал записей (от новых к старым) → строки занятий в том же порядке. */
+export function toWorkoutRows(workouts: Workout[]): WorkoutRow[] {
+  const bySession = new Map<number, Workout[]>();
+  const order: number[] = [];
+  for (const w of workouts) {
+    const key = w.session?.id ?? w.id;
+    if (!bySession.has(key)) order.push(key);
+    bySession.set(key, [...(bySession.get(key) ?? []), w]);
+  }
+
+  return order.map((key) => {
+    const items = [...bySession.get(key)!].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    const first = items[0]!;
+    const main = items.reduce((a, b) => (b.durationMin > a.durationMin ? b : a), first);
+    const sum = (pick: (w: Workout) => number | null): number | null => {
+      const values = items.map(pick).filter((v): v is number => v !== null);
+      return values.length ? values.reduce((a, b) => a + b, 0) : null;
+    };
+    const notes = [...new Set(items.map((w) => w.note).filter((n): n is string => !!n))];
+    return {
+      key,
+      items,
+      title: first.session ? sessionTitle(first.session.parts) : sportTitle(first),
+      sport: main.sport,
+      source: main.source,
+      startedAt: first.startedAt,
+      durationMin: first.session?.durationMin ?? first.durationMin,
+      kcal: sum((w) => w.kcal),
+      distanceM: sum((w) => w.distanceM),
+      verdict: first.verdict,
+      forceCounted: items.some((w) => w.forceCounted),
+      forceNote: items.find((w) => w.forceNote)?.forceNote ?? null,
+      excludedNote: items.find((w) => w.excludedNote)?.excludedNote ?? null,
+      note: notes.length ? notes.join(' · ') : null,
+    };
+  });
+}
+
+/** Подпись под названием: длительность, калории, дистанция, источник. */
+export function workoutMeta(r: Pick<WorkoutRow, 'durationMin' | 'kcal' | 'distanceM' | 'source'>): string {
+  const parts = [`${r.durationMin} мин`];
+  if (r.kcal) parts.push(`${r.kcal} ккал`);
+  if (r.distanceM) parts.push(`${(r.distanceM / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} км`);
+  parts.push(SOURCE_LABEL[r.source] ?? r.source);
+  return parts.join(' · ');
 }
 
 /** Итог недели одной строкой: у закрытой — с отметкой, у текущей — просто счёт. */

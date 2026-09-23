@@ -6,7 +6,6 @@ import { confirmAction, haptic } from '../telegram';
 import { formatDateRu, formatDayHumanRu, formatTimeRu, todayInZone } from '../helpers';
 import WeekStrip from './WeekStrip.vue';
 import {
-  SOURCE_LABEL,
   SPORT_EMOJI,
   SPORT_LABEL,
   VERDICT_LABEL,
@@ -15,9 +14,10 @@ import {
   groupWorkoutsByWeek,
   newClientId,
   numOrNull,
-  sessionTitle,
-  sportTitle,
+  toWorkoutRows,
   weekSummary,
+  workoutMeta,
+  type WorkoutRow,
 } from '../fitness';
 
 const props = defineProps<{ challengeId: number; overview: FitnessOverview }>();
@@ -73,7 +73,8 @@ const today = computed(() => todayInZone(props.overview.challenge.timezone));
 const groups = computed(() => {
   const { startDate, timezone } = props.overview.challenge;
   const game = props.overview.game;
-  return groupWorkoutsByWeek(workouts.value, startDate, timezone).map((g) => {
+  // занятие — одна строка, как в ленте: часы режут тренировку по видам, а засчитывается она целиком
+  return groupWorkoutsByWeek(toWorkoutRows(workouts.value), startDate, timezone).map((g) => {
     const closed = game.history.find((h) => h.weekNumber === g.weekNumber);
     const current = game.currentWeek?.weekNumber === g.weekNumber ? game.currentWeek : null;
     // полоска недели; null — до старта или неделя без итога
@@ -81,14 +82,6 @@ const groups = computed(() => {
     return { ...g, summary: weekSummary(closed, current), days };
   });
 });
-
-function meta(w: Workout): string {
-  const parts = [`${w.durationMin} мин`];
-  if (w.kcal) parts.push(`${w.kcal} ккал`);
-  if (w.distanceM) parts.push(`${(w.distanceM / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} км`);
-  parts.push(SOURCE_LABEL[w.source] ?? w.source);
-  return parts.join(' · ');
-}
 
 async function add() {
   const durationMin = numOrNull(form.durationMin);
@@ -121,12 +114,14 @@ async function add() {
   }
 }
 
-async function remove(w: Workout) {
-  if (!(await confirmAction(`Удалить тренировку «${sportTitle(w)}» от ${formatDateRu(challengeDay(w.startedAt))}?`))) return;
+async function remove(r: WorkoutRow) {
+  const n = r.items.length;
+  const what = n > 1 ? `занятие «${r.title}» (${n} ${n < 5 ? 'записи' : 'записей'})` : `тренировку «${r.title}»`;
+  if (!(await confirmAction(`Удалить ${what} от ${formatDateRu(challengeDay(r.startedAt))}?`))) return;
   if (busy.value) return;
   busy.value = true;
   try {
-    await api.deleteWorkout(w.id);
+    for (const w of r.items) await api.deleteWorkout(w.id);
     await load();
     emit('changed');
   } catch (e) {
@@ -185,20 +180,17 @@ onMounted(load);
         </div>
         <WeekStrip v-if="g.days" :days="g.days" tone="card" size="sm" />
       </div>
-      <div v-for="w in g.items" :key="w.id" class="workout">
+      <div v-for="w in g.items" :key="w.key" class="workout">
         <div class="ico">{{ SPORT_EMOJI[w.sport] ?? '💪' }}</div>
         <div class="grow">
           <div class="title">
-            {{ sportTitle(w) }}
+            {{ w.title }}
             <span class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
           </div>
           <div class="muted">
-            {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ meta(w) }}
+            {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ workoutMeta(w) }}
           </div>
           <div v-if="w.note" class="muted">{{ w.note }}</div>
-          <div v-if="w.session" class="muted">
-            Часть занятия «{{ sessionTitle(w.session.parts) }}», вместе {{ w.session.durationMin }} мин
-          </div>
           <div v-if="w.forceCounted" class="muted">
             Засчитана админом<template v-if="w.forceNote">: {{ w.forceNote }}</template>
           </div>

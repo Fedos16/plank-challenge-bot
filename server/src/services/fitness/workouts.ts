@@ -173,8 +173,13 @@ export function challengeInstants(ch: Challenge): { from: Date; to: Date } {
 export async function listWorkouts(ch: Challenge, userId: number): Promise<WorkoutDTO[]> {
   const { from, to } = challengeInstants(ch);
   const workouts = await loadWorkouts(userId, from, to);
-  const { verdicts, sessions } = classify(workouts, rulesOf(ch));
+  const rules = rulesOf(ch);
+  const { verdicts, sessions } = classify(workouts, rules);
   const bySession = describeSessions(sessions, workouts);
+  // Снятые админом в занятия не входят. Чтобы отменённое целиком занятие не рассыпалось
+  // в журнале на части, снятые записи собираем между собой тем же правилом
+  const excluded = workouts.filter((w) => w.excluded).map((w) => ({ ...w, excluded: false, duplicateOfId: null }));
+  for (const [id, dto] of describeSessions(classify(excluded, rules).sessions, workouts)) bySession.set(id, dto);
   return workouts
     .map((w) => toWorkoutDTO(w, verdicts.get(w.id) ?? 'counted', bySession.get(w.id)))
     .reverse();
