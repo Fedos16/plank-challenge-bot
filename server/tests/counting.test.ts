@@ -185,3 +185,22 @@ test('classify: зал из двух записей при часовом мин
   const forced = w('2026-09-21T17:44:50Z', 11.1, { forceCounted: true });
   assert.equal(classify([treadmill, forced], rules).sessions[0].verdict, 'counted');
 });
+
+test('assignDuplicates: при равном источнике главнее более длинная — исправленная — запись', () => {
+  // WHOOP выгрузил силовую 09:45–10:17, потом в ней сдвинули начало на 09:10 — пришла новой записью
+  const old = w('2026-09-23T06:45:00Z', 32, { source: 'hae' });
+  const edited = w('2026-09-23T06:10:00Z', 66, { source: 'hae' });
+  const result = assignDuplicates([old, edited]);
+  assert.equal(result.get(edited.id), null);
+  assert.equal(result.get(old.id), edited.id);
+});
+
+test('classify: перекрытие частей занятия считается один раз', () => {
+  // ходьба до зала 08:49–09:25 заходит на силовую 09:10–10:16: занятие 08:49–10:16, 87 минут, а не 102
+  const walk = w('2026-09-23T05:49:00Z', 36, { source: 'hae' });
+  const gym = w('2026-09-23T06:10:00Z', 66, { source: 'hae' });
+  const { sessions } = classify([walk, gym], { ...RULES, minWorkoutMin: 60 });
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0]!.durationSec, 87 * 60);
+  assert.equal(sessions[0]!.verdict, 'counted');
+});

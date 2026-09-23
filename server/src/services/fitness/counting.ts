@@ -39,6 +39,24 @@ function endMs(w: WorkoutLike): number {
   return w.startedAt.getTime() + Math.max(1, w.durationSec) * 1000;
 }
 
+/**
+ * Сколько времени покрывают записи занятия (отсортированные по началу). Паузы между ними
+ * тренировкой не считаются, а перекрытие — ходьба до зала, заходящая на силовую, — идёт один раз.
+ */
+function coveredSec(items: WorkoutLike[]): number {
+  let total = 0;
+  let coveredTo = -Infinity;
+  for (const w of items) {
+    const start = w.startedAt.getTime();
+    const end = start + w.durationSec * 1000;
+    if (end > coveredTo) {
+      total += end - Math.max(start, coveredTo);
+      coveredTo = end;
+    }
+  }
+  return Math.round(total / 1000);
+}
+
 /** Доля перекрытия от более короткой записи: 40-минутка внутри часовой — это 1, а не 0,67. */
 export function overlapRatio(a: WorkoutLike, b: WorkoutLike): number {
   const overlap = Math.min(endMs(a), endMs(b)) - Math.max(a.startedAt.getTime(), b.startedAt.getTime());
@@ -51,10 +69,16 @@ export function overlapRatio(a: WorkoutLike, b: WorkoutLike): number {
  * Раскладывает записи на основные и дубли. Возвращает для каждой id основной записи либо null.
  * Снятые админом записи участвуют наравне с остальными: иначе, сняв запись с браслета,
  * админ нечаянно вернул бы в зачёт её ручной дубль.
+ *
+ * При равном источнике главнее более длинная запись: исправленная тренировка (в WHOOP сдвинули
+ * начало на полчаса раньше) приходит новой записью и накрывает старую — засчитываться должна она.
  */
 export function assignDuplicates(workouts: WorkoutLike[]): Map<number, number | null> {
   const ordered = [...workouts].sort(
-    (a, b) => (SOURCE_PRIORITY[b.source] ?? 0) - (SOURCE_PRIORITY[a.source] ?? 0) || a.id - b.id,
+    (a, b) =>
+      (SOURCE_PRIORITY[b.source] ?? 0) - (SOURCE_PRIORITY[a.source] ?? 0) ||
+      b.durationSec - a.durationSec ||
+      a.id - b.id,
   );
   const primaries: WorkoutLike[] = [];
   const result = new Map<number, number | null>();
@@ -86,7 +110,7 @@ export interface Session {
   workoutIds: number[];
   /** День начала в поясе челленджа. */
   day: DayStr;
-  /** Сумма длительностей сегментов: паузы между ними тренировкой не считаются. */
+  /** Время, покрытое сегментами: паузы между ними не считаются, перекрытия — один раз. */
   durationSec: number;
   verdict: Verdict;
   /** Засчитана админом вручную. */
@@ -133,7 +157,7 @@ export function classify(workouts: WorkoutLike[], rules: CountingRules): Classif
   const sessions: Session[] = [];
   for (const group of groups) {
     const day = challengeDay(group.first.startedAt, rules.tz);
-    const durationSec = group.items.reduce((sum, w) => sum + w.durationSec, 0);
+    const durationSec = coveredSec(group.items);
     const forced = group.items.some((w) => w.forceCounted);
 
     let verdict: Verdict;
