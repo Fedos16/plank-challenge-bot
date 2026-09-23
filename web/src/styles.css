@@ -277,6 +277,12 @@ label.field .lbl {
   margin-bottom: 4px;
   display: block;
 }
+/* обязательное поле: без него форма не отправится */
+label.field .lbl.req::after {
+  content: ' *';
+  color: var(--red);
+  font-weight: 700;
+}
 input,
 textarea,
 select {

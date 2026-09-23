@@ -241,7 +241,7 @@ onMounted(load);
       <h3>⚖️ Записать вес</h3>
       <div class="three">
         <label class="field">
-          <span class="lbl">Вес, кг</span>
+          <span class="lbl req">Вес, кг</span>
           <input v-model="weightForm.weightKg" inputmode="decimal" placeholder="85,4" @keyup.enter="addWeight" />
         </label>
         <label class="field">

@@ -307,7 +307,7 @@ onMounted(async () => {
       </div>
 
       <label v-if="mode !== 'custom'" class="field">
-        <span class="lbl">Приём пищи</span>
+        <span class="lbl req">Приём пищи</span>
         <select v-model="meal">
           <option v-for="m in MEALS" :key="m" :value="m">{{ MEAL_LABEL[m] }}</option>
         </select>
@@ -351,7 +351,7 @@ onMounted(async () => {
             <button class="btn small secondary" @click="selected = null">Другой</button>
           </div>
           <label class="field">
-            <span class="lbl">Сколько, г</span>
+            <span class="lbl req">Сколько, г</span>
             <input v-model="grams" inputmode="decimal" @keyup.enter="addProduct" />
           </label>
           <div v-if="selected.servingGrams" class="chips">
@@ -372,11 +372,11 @@ onMounted(async () => {
       <template v-else-if="mode === 'kcal'">
         <div class="two">
           <label class="field">
-            <span class="lbl">Калории</span>
+            <span class="lbl req">Калории</span>
             <input v-model="kcalForm.kcal" inputmode="numeric" placeholder="450" @keyup.enter="addKcal" />
           </label>
           <label class="field">
-            <span class="lbl">Что это (необязательно)</span>
+            <span class="lbl">Что это</span>
             <input v-model="kcalForm.title" maxlength="80" placeholder="Бизнес-ланч" @keyup.enter="addKcal" />
           </label>
         </div>
@@ -387,9 +387,9 @@ onMounted(async () => {
         <div class="muted" style="margin-bottom: 10px">
           Цифры — с упаковки, на 100 г. Продукт останется в общем справочнике: друзья найдут его поиском.
         </div>
-        <label class="field"><span class="lbl">Название</span><input v-model="customForm.name" maxlength="80" /></label>
+        <label class="field"><span class="lbl req">Название</span><input v-model="customForm.name" maxlength="80" /></label>
         <div class="two">
-          <label class="field"><span class="lbl">Ккал на 100 г</span><input v-model="customForm.kcal100" inputmode="decimal" /></label>
+          <label class="field"><span class="lbl req">Ккал на 100 г</span><input v-model="customForm.kcal100" inputmode="decimal" /></label>
           <label class="field"><span class="lbl">Белки, г</span><input v-model="customForm.protein100" inputmode="decimal" /></label>
           <label class="field"><span class="lbl">Жиры, г</span><input v-model="customForm.fat100" inputmode="decimal" /></label>
           <label class="field"><span class="lbl">Углеводы, г</span><input v-model="customForm.carbs100" inputmode="decimal" /></label>
@@ -474,6 +474,8 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+  /* поля в ряд по нижнему краю: длинная подпись на узком экране переносится и не должна их сдвигать */
+  align-items: end;
 }
 .chips {
   display: flex;

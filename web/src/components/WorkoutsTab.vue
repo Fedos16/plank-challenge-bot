@@ -141,23 +141,23 @@ onMounted(load);
     <div class="card">
       <h3>➕ Записать тренировку</h3>
       <label class="field">
-        <span class="lbl">Вид</span>
+        <span class="lbl req">Вид</span>
         <select v-model="form.sport">
           <option v-for="s in sports" :key="s" :value="s">{{ SPORT_EMOJI[s] ?? '💪' }} {{ SPORT_LABEL[s] ?? s }}</option>
         </select>
       </label>
       <div class="two">
-        <label class="field"><span class="lbl">Дата</span><input v-model="form.date" type="date" :max="localDate(new Date())" /></label>
+        <label class="field"><span class="lbl req">Дата</span><input v-model="form.date" type="date" :max="localDate(new Date())" /></label>
         <label class="field"><span class="lbl">Начало</span><input v-model="form.time" type="time" /></label>
       </div>
       <div class="two">
         <label class="field">
-          <span class="lbl">Длительность, мин</span>
+          <span class="lbl req">Длительность, мин</span>
           <input v-model="form.durationMin" inputmode="numeric" placeholder="45" @keyup.enter="add" />
         </label>
         <label class="field">
-          <span class="lbl">Калории (необязательно)</span>
-          <input v-model="form.kcal" inputmode="numeric" placeholder="—" @keyup.enter="add" />
+          <span class="lbl">Калории</span>
+          <input v-model="form.kcal" inputmode="numeric" placeholder="необязательно" @keyup.enter="add" />
         </label>
       </div>
       <label class="field">
@@ -211,6 +211,8 @@ onMounted(load);
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+  /* поля в ряд по нижнему краю: длинная подпись на узком экране переносится и не должна их сдвигать */
+  align-items: end;
 }
 .week-head {
   display: flex;

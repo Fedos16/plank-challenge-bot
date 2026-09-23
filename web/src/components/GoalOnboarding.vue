@@ -154,16 +154,16 @@ async function save() {
         Подставили ваше последнее взвешивание — поправьте, если нужно.
       </div>
       <label class="field">
-        <span class="lbl">Вес, кг</span>
+        <span class="lbl" :class="{ req: metric === 'weightKg' }">Вес, кг</span>
         <input v-model="form.startWeightKg" inputmode="decimal" placeholder="85,4" />
       </label>
       <div class="two">
         <label class="field">
-          <span class="lbl">Жир, %</span>
+          <span class="lbl" :class="{ req: metric === 'bodyFat' }">Жир, %</span>
           <input v-model="form.startBodyFat" inputmode="decimal" placeholder="—" />
         </label>
         <label class="field">
-          <span class="lbl">Мышцы, {{ muscleUnitLabel }}</span>
+          <span class="lbl" :class="{ req: metric === 'muscle' }">Мышцы, {{ muscleUnitLabel }}</span>
           <input v-model="form.startMuscle" inputmode="decimal" placeholder="—" />
         </label>
       </div>
@@ -187,7 +187,7 @@ async function save() {
 
       <template v-if="metric">
         <label class="field" style="margin-bottom: 6px">
-          <span class="lbl">{{ targetLabel }}</span>
+          <span class="lbl req">{{ targetLabel }}</span>
           <input v-model="form.targetValue" inputmode="decimal" :placeholder="targetPlaceholder" />
         </label>
         <div v-if="startHint" class="start-hint" :class="{ missing: startHint.missing }">{{ startHint.text }}</div>
