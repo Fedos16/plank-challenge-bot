@@ -158,8 +158,11 @@ function fitnessDay(c: MyChallenge): string {
   margin-bottom: 4px;
 }
 .challenge-title {
-  font-size: 17px;
-  font-weight: 700;
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 .challenge-card-meta {
   display: flex;

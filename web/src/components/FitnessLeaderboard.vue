@@ -17,6 +17,10 @@ import {
   sportTitle,
 } from '../fitness';
 
+/**
+ * Часть «Обзора»: как дела у каждого участника и общая лента. Это не рейтинг — у всех свои
+ * цели, поэтому мест нет: сначала вы, дальше по имени.
+ */
 const props = defineProps<{ challengeId: number; overview: FitnessOverview }>();
 
 const rows = ref<FitnessLeaderboardRow[]>([]);
@@ -36,6 +40,14 @@ async function load() {
   }
 }
 
+/** Участники без мест: вы первым, остальные по имени. Цифры тела — из сводки, если открыты. */
+const people = computed(() => {
+  const body = new Map(props.overview.participants.map((p) => [p.participationId, p]));
+  return [...rows.value]
+    .sort((a, b) => Number(b.isMe) - Number(a.isMe) || a.name.localeCompare(b.name, 'ru'))
+    .map((r) => ({ row: r, participant: body.get(r.participationId) ?? null }));
+});
+
 function challengeDay(iso: string): string {
   return new Date(iso).toLocaleDateString('sv-SE', { timeZone: props.overview.challenge.timezone });
 }
@@ -49,18 +61,17 @@ function weekDots(r: FitnessLeaderboardRow): boolean[] {
   return Array.from({ length: total }, (_, i) => i < r.week!.done);
 }
 
-function statusLine(r: FitnessLeaderboardRow): string {
-  if (r.eliminated) return `выбыл на неделе ${r.eliminatedAtWeekNumber}`;
+function weekLine(r: FitnessLeaderboardRow): string {
+  if (r.eliminated) return `вне зачёта с недели ${r.eliminatedAtWeekNumber}`;
   const parts: string[] = [];
-  if (r.week) parts.push(`${r.week.done} из ${r.week.required}`);
+  if (r.week) parts.push(`${r.week.done} из ${r.week.required} на этой неделе`);
   parts.push(`всего ${r.totalCounted}`);
-  if (r.normPercent !== null) parts.push(`норма ${r.normPercent}%`);
   return parts.join(' · ');
 }
 
 /** Цифры участника видны, только если он сам их открыл. */
-function bodyLine(p: FitnessParticipant): string {
-  if (!p.body || p.body.current === null) return '';
+function bodyLine(p: FitnessParticipant | null): string {
+  if (!p?.body || p.body.current === null) return '';
   const target = p.body.target !== null ? ` → ${formatNum(p.body.target)}` : '';
   const unit = p.body.unit ? ` ${UNIT_LABEL[p.body.unit]}` : '';
   return `${formatNum(p.body.current)}${target}${unit}`;
@@ -76,59 +87,44 @@ function feedMeta(w: FeedItem): string {
 onMounted(load);
 </script>
 
-<!--
-  Часть «Обзора»: рейтинг, прогресс всех к цели и лента. Ждут ответа сервера только рейтинг и лента,
-  прогресс рисуется сразу.
--->
 <template>
   <div class="card">
-    <h3>Рейтинг</h3>
+    <h3>Участники</h3>
     <div v-if="loading" class="muted">Загрузка…</div>
     <div v-else-if="error" class="error-text">{{ error }}</div>
     <template v-else>
-      <div
-        v-for="(r, i) in rows"
-        :key="r.participationId"
-        class="row"
-        :class="{ out: r.eliminated, me: r.isMe }"
-      >
-        <div class="rank">{{ r.eliminated ? '☠️' : i + 1 }}</div>
-        <img v-if="r.photoUrl" :src="r.photoUrl" class="pic" alt="" />
-        <div v-else class="pic">{{ initials(r.name) }}</div>
-        <div class="grow">
-          <div class="name">{{ r.name }} <span v-if="r.isMe" class="me-tag">вы</span></div>
-          <div class="meta">
-            <span v-if="weekDots(r).length" class="dots" :title="`${r.week?.done} из ${r.week?.required} на неделе`">
-              <span v-for="(filled, k) in weekDots(r)" :key="k" class="dot" :class="{ filled }" />
-            </span>
-            {{ statusLine(r) }}
-          </div>
+      <div v-for="{ row: r, participant: p } in people" :key="r.participationId" class="person" :class="{ out: r.eliminated, me: r.isMe }">
+        <div class="person-head">
+          <img v-if="r.photoUrl" :src="r.photoUrl" class="pic" alt="" />
+          <div v-else class="pic">{{ initials(r.name) }}</div>
+          <span class="name">{{ r.name }}</span>
+          <span v-if="r.isMe" class="me-tag">вы</span>
+          <span class="lives">{{ hearts(r.livesLeft, r.livesTotal) }}</span>
         </div>
-        <div class="lives">{{ hearts(r.livesLeft, r.livesTotal) }}</div>
+
+        <div v-if="r.goalType" class="goal">
+          <div class="goal-head">
+            <span>{{ GOAL_EMOJI[r.goalType] }} {{ GOAL_LABEL[r.goalType] }}</span>
+            <span v-if="r.progressPercent !== null" class="goal-pct">{{ r.progressPercent }}%</span>
+          </div>
+          <div v-if="r.progressPercent !== null" class="bar">
+            <div class="bar-fill" :style="{ width: r.progressPercent + '%' }" />
+          </div>
+          <div v-if="bodyLine(p)" class="muted">{{ bodyLine(p) }}</div>
+        </div>
+        <div v-else class="muted goal">⏳ цель не выбрана</div>
+
+        <div class="week">
+          <span v-if="weekDots(r).length" class="dots">
+            <span v-for="(filled, k) in weekDots(r)" :key="k" class="dot" :class="{ filled }" />
+          </span>
+          {{ weekLine(r) }}
+        </div>
       </div>
-      <div class="muted" style="margin-top: 10px">
-        Цели у всех разные, поэтому места — по дисциплине: кто в игре, у кого больше жизней, кто ровнее
-        закрывает норму.
+      <div class="muted" style="margin-top: 12px">
+        У каждого своя цель, поэтому здесь нет мест — просто видно, как у кого идут дела.
       </div>
     </template>
-  </div>
-
-  <div class="card">
-    <h3>Прогресс к цели</h3>
-    <div v-for="p in overview.participants" :key="p.participationId" class="person">
-      <div class="bar-head">
-        <span class="person-name">
-          {{ p.goalType ? GOAL_EMOJI[p.goalType] : '⏳' }} {{ p.name }}
-          <span v-if="p.isMe" class="muted">· вы</span>
-        </span>
-        <span v-if="p.progressPercent !== null" class="fire">{{ p.progressPercent }}%</span>
-        <span v-else class="muted">{{ p.goalType ? GOAL_LABEL[p.goalType] : 'цель не выбрана' }}</span>
-      </div>
-      <div v-if="p.progressPercent !== null" class="bar">
-        <div class="bar-fill" :style="{ width: p.progressPercent + '%' }" />
-      </div>
-      <div v-if="bodyLine(p)" class="muted">{{ bodyLine(p) }}</div>
-    </div>
   </div>
 
   <div v-if="!error" class="card">
@@ -153,35 +149,104 @@ onMounted(load);
 </template>
 
 <style scoped>
-.row.out {
+.person {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.person:first-of-type {
+  padding-top: 4px;
+}
+.person:last-of-type {
+  border-bottom: none;
+}
+.person.out {
   opacity: 0.55;
 }
-/* своя строка: лёгкая подложка цветом акцента */
-.row.me {
-  background: rgba(255, 107, 53, 0.09);
-  border-radius: 12px;
-  margin: 0 -8px;
-  padding-left: 8px;
-  padding-right: 8px;
-  border-bottom-color: transparent;
+/* своя запись — тонкая полоса акцента слева, как в отчёте недели */
+.person.me {
+  margin: 0 -18px;
+  padding-left: 15px;
+  padding-right: 18px;
+  border-left: 3px solid var(--accent);
+}
+.person-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pic {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--button);
+  color: var(--button-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.name {
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .me-tag {
-  display: inline-block;
-  margin-left: 4px;
+  flex: 0 0 auto;
   padding: 0 7px;
   border-radius: 9px;
   font-size: 11px;
   font-weight: 700;
   line-height: 17px;
-  vertical-align: middle;
   background: var(--accent);
   color: #fff;
 }
-.meta {
+.lives {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+.goal {
+  margin-top: 10px;
+}
+.goal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.goal-pct {
+  font-family: var(--display);
+  font-weight: 600;
+}
+.bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--track);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--green);
+}
+.week {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--hint);
 }
 .dots {
   display: inline-flex;
@@ -198,62 +263,11 @@ onMounted(load);
   background: var(--green);
   border-color: var(--green);
 }
-.row .grow {
-  flex: 1;
-  min-width: 0;
-}
-.pic {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: var(--button);
-  color: var(--button-text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  flex: 0 0 auto;
-}
-.lives {
-  font-size: 13px;
-  white-space: nowrap;
-}
-.person {
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
-}
-.person:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-.person-name {
-  font-weight: 600;
-}
-.bar-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.bar {
-  height: 8px;
-  border-radius: 4px;
-  background: rgba(128, 128, 128, 0.18);
-  overflow: hidden;
-}
-.bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  background: var(--accent);
-}
 .feed-item {
   display: flex;
   gap: 10px;
-  padding: 9px 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
 }
 .feed-item:last-child {
   border-bottom: none;
@@ -262,7 +276,11 @@ onMounted(load);
 .feed-item .ico {
   font-size: 20px;
 }
+.feed-item .grow {
+  flex: 1;
+  min-width: 0;
+}
 .feed-item .name {
-  font-weight: 600;
+  white-space: normal;
 }
 </style>

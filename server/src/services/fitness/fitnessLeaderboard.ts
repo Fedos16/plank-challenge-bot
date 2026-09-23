@@ -33,23 +33,11 @@ export interface FitnessLeaderboardRow {
 }
 
 /**
- * У всех разные цели, поэтому общий знаменатель — дисциплина: кто в игре, у кого больше жизней,
- * кто ровнее закрывает норму. Процент к цели — лишь последний тай-брейк.
+ * Это не рейтинг: у всех свои цели, соревноваться не с кем. Поэтому порядок нейтральный —
+ * сначала сам человек, дальше по имени.
  */
 function compareRows(a: FitnessLeaderboardRow, b: FitnessLeaderboardRow): number {
-  if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
-  // среди выбывших выше тот, кто продержался дольше
-  if (a.eliminated && b.eliminated) {
-    const diff = (b.eliminatedAtWeekNumber ?? 0) - (a.eliminatedAtWeekNumber ?? 0);
-    if (diff) return diff;
-  }
-  return (
-    b.livesLeft - a.livesLeft ||
-    (b.normPercent ?? -1) - (a.normPercent ?? -1) ||
-    b.totalCounted - a.totalCounted ||
-    (b.progressPercent ?? -1) - (a.progressPercent ?? -1) ||
-    a.name.localeCompare(b.name, 'ru')
-  );
+  return Number(b.isMe) - Number(a.isMe) || a.name.localeCompare(b.name, 'ru');
 }
 
 export async function getFitnessLeaderboard(ch: Challenge, meId: number): Promise<FitnessLeaderboardRow[]> {

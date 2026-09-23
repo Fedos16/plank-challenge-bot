@@ -21,18 +21,6 @@ const weekNumber = ref<number | undefined>(props.week);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
-/** Свои шрифты только у отчёта: остальное приложение живёт на системном. Нет сети — фолбэк. */
-const FONTS_URL =
-  'https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@600;800&display=swap';
-function loadFonts() {
-  if (document.getElementById('report-fonts')) return;
-  const link = document.createElement('link');
-  link.id = 'report-fonts';
-  link.rel = 'stylesheet';
-  link.href = FONTS_URL;
-  document.head.appendChild(link);
-}
-
 async function load() {
   loading.value = true;
   error.value = null;
@@ -201,10 +189,7 @@ const highlights = computed(() => {
   });
 });
 
-onMounted(() => {
-  loadFonts();
-  void load();
-});
+onMounted(load);
 watch(
   () => [props.challengeId, props.week],
   () => {
@@ -368,13 +353,10 @@ watch(
 </template>
 
 <style scoped>
+/* шрифты, линейки и дорожка полос — общие, из styles.css */
 .report-page {
-  --display: 'Unbounded', 'Arial Black', system-ui, sans-serif;
-  --body: 'Onest', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --rule: rgba(128, 128, 128, 0.22);
-  --path-track: rgba(128, 128, 128, 0.16);
+  --path-track: var(--track);
   --path-base: rgba(128, 128, 128, 0.42);
-  font-family: var(--body);
 }
 .back {
   background: none;

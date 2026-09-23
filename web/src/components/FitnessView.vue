@@ -136,21 +136,21 @@ const weekState = computed<'closed' | 'risk' | 'lost' | 'normal'>(() => {
   return left >= daysLeft ? 'risk' : 'normal';
 });
 
-/** Подпись под счётом недели: сколько осталось и сколько на это дней. */
+/** Подпись под счётом недели: сколько осталось и сколько на это дней. Номер недели — в шапке блока. */
 const weekLabel = computed(() => {
   const week = data.value?.game.currentWeek;
   if (!week) return '';
   const left = week.required - week.done;
-  if (left <= 0) return `неделя ${week.weekNumber} закрыта 🎉`;
+  if (left <= 0) return 'норма закрыта 🎉';
   const daysLeft = week.days.filter((d) => d.inWindow && (d.isToday || d.isFuture)).length;
   const word = left === 1 ? 'тренировка' : left < 5 ? 'тренировки' : 'тренировок';
   const rest = `ещё ${left} ${word} за ${daysLeft} дн.`;
-  if (weekState.value === 'lost') return `неделя ${week.weekNumber} · норма уже не набирается: ${rest}`;
+  if (weekState.value === 'lost') return `норма уже не набирается: ${rest}`;
   if (weekState.value === 'risk') {
-    if (daysLeft <= 1) return `неделя ${week.weekNumber} · сегодня обязательно!`;
-    return `неделя ${week.weekNumber} · ${rest} — без пропусков`;
+    if (daysLeft <= 1) return 'сегодня обязательно!';
+    return `${rest} — без пропусков`;
   }
-  return `неделя ${week.weekNumber} · ${rest}`;
+  return rest;
 });
 
 async function toggleShare() {
@@ -239,11 +239,16 @@ watch(() => props.challengeId, load);
               risk: weekState === 'risk' || weekState === 'lost',
             }"
           >
-            <div class="hero-lives">{{ hearts(data.game.lives.left, data.game.lives.total) }}</div>
+            <div class="hero-top">
+              <span class="hero-kicker">{{ data.game.currentWeek ? `Неделя ${data.game.currentWeek.weekNumber}` : 'Жизни' }}</span>
+              <span class="hero-lives">{{ hearts(data.game.lives.left, data.game.lives.total) }}</span>
+            </div>
             <template v-if="data.game.currentWeek">
-              <div class="num">{{ data.game.currentWeek.done }} из {{ data.game.currentWeek.required }}</div>
+              <div class="num">
+                {{ data.game.currentWeek.done }}<span class="of">из {{ data.game.currentWeek.required }}</span>
+              </div>
               <div class="lbl">{{ weekLabel }}</div>
-              <WeekStrip :days="data.game.currentWeek.days" tone="hero" class="week-strip" />
+              <WeekStrip :days="data.game.currentWeek.days" tone="card" class="week-strip" />
             </template>
             <div v-else class="lbl">
               {{ data.challenge.phase === 'upcoming' ? 'Челлендж ещё не начался' : 'Челлендж завершён' }}
@@ -307,7 +312,7 @@ watch(() => props.challengeId, load);
             <div class="bar"><div class="bar-fill time" :style="{ width: timePercent + '%' }" /></div>
           </div>
 
-          <!-- Рейтинг, прогресс всех к цели и лента -->
+          <!-- Участники (без мест) и лента тренировок -->
           <FitnessLeaderboard :challenge-id="challengeId" :overview="data" />
 
           <!-- История недель: от свежих к старым, каждая — полоской дней -->
@@ -418,17 +423,19 @@ watch(() => props.challengeId, load);
 .bar {
   height: 8px;
   border-radius: 4px;
-  background: rgba(128, 128, 128, 0.18);
+  background: var(--track);
   overflow: hidden;
 }
 .bar-fill {
   height: 100%;
   border-radius: 4px;
-  background: var(--accent);
+  background: var(--green);
   transition: width 0.3s ease;
 }
+/* время челленджа — нейтральными «чернилами», как шкала в шапке отчёта */
 .bar-fill.time {
-  background: var(--link);
+  background: var(--text);
+  opacity: 0.75;
 }
 .person-name {
   font-weight: 600;
@@ -437,41 +444,51 @@ watch(() => props.challengeId, load);
   border: 1.5px solid rgba(231, 76, 60, 0.4);
   font-size: 14px;
 }
-.streak-hero.out,
-.streak-hero.out.closed,
-.streak-hero.out.risk {
-  background: linear-gradient(135deg, #6b6b73, #8e8e96);
+/* Неделя — типографикой на листе, цвет говорят только цифра и подпись */
+.hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.hero-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hint);
 }
 .hero-lives {
-  font-size: 22px;
-  letter-spacing: 3px;
-  margin-bottom: 8px;
+  font-size: 16px;
+  letter-spacing: 2px;
 }
 .streak-hero .num {
-  font-size: 44px;
+  font-size: 56px;
+}
+.streak-hero .of {
+  margin-left: 10px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--hint);
 }
 .week-strip {
-  margin-top: 12px;
+  margin-top: 14px;
 }
-/* норма набрана: зелёный, галочки на нём — белые */
-.streak-hero.closed {
-  background: linear-gradient(135deg, #1fa463, #34d27a);
+.streak-hero :deep(.days) {
+  justify-content: flex-start;
 }
-.streak-hero.closed :deep(.day.done) {
-  background: #fff;
-  border-color: #fff;
-  color: #1fa463;
+/* норма набрана — зелёная цифра */
+.streak-hero.closed .num {
+  color: var(--green);
 }
-/* пропускать уже нельзя: красный и подпись жирным */
-.streak-hero.risk {
-  background: linear-gradient(135deg, #d63a2f, #f06a5e);
-}
+/* пропускать уже нельзя — красная подпись */
 .streak-hero.risk .lbl {
-  opacity: 1;
+  color: var(--red);
   font-weight: 700;
 }
-.streak-hero .lbl {
-  padding: 0 16px;
+.streak-hero.out {
+  opacity: 0.6;
 }
 .week-row {
   gap: 10px;
