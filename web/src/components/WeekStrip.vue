@@ -3,14 +3,20 @@ import type { WeekDay } from '../types';
 import { weekdayShortRu } from '../helpers';
 
 /**
- * Полоска недели: день недели над кружком, галочка за тренировку, приглушённый кружок с крестиком
- * за прошедший день без неё, обводка и точка в центре у сегодняшнего. Один язык для обзора и журнала.
- * tone=hero — на цветной подложке, tone=card — на белой карточке; size=sm — компактная.
+ * Полоска недели: день недели над квадратом, галочка за тренировку, приглушённый квадрат с
+ * крестиком за прошедший день без неё, обводка и метка в центре у сегодняшнего. Один язык для
+ * обзора, журнала и отчёта. tone=hero — на цветном листе (цвет листа — в --hero-ink), tone=card —
+ * на обычном; size=sm — компактная. markToday=false — сегодня не выделяется (в отчёте неделю
+ * разбирают, а не проживают).
  */
-withDefaults(defineProps<{ days: WeekDay[]; tone?: 'hero' | 'card'; size?: 'md' | 'sm' }>(), {
-  tone: 'hero',
-  size: 'md',
-});
+const props = withDefaults(
+  defineProps<{ days: WeekDay[]; tone?: 'hero' | 'card'; size?: 'md' | 'sm'; markToday?: boolean }>(),
+  { tone: 'hero', size: 'md', markToday: true },
+);
+
+function isToday(d: WeekDay): boolean {
+  return props.markToday && d.isToday;
+}
 
 /** Прошедший день зачётного окна без тренировки. */
 function missed(d: WeekDay): boolean {
@@ -24,14 +30,14 @@ function missed(d: WeekDay): boolean {
       v-for="d in days"
       :key="d.day"
       class="day-col"
-      :class="{ today: d.isToday, off: !d.inWindow && d.count === 0 }"
+      :class="{ today: isToday(d), off: !d.inWindow && d.count === 0 }"
       :title="d.day"
     >
       <span class="dow">{{ weekdayShortRu(d.day) }}</span>
-      <span class="day" :class="{ done: d.count > 0, missed: missed(d), today: d.isToday }">
+      <span class="day" :class="{ done: d.count > 0, missed: missed(d), today: isToday(d) }">
         {{ d.count > 0 ? '✓' : missed(d) ? '×' : '' }}
-        <!-- сегодня, пока тренировки нет: точка — чтобы день читался как «сейчас», а не как пустой -->
-        <span v-if="d.isToday && d.count === 0" class="now" />
+        <!-- сегодня, пока тренировки нет: метка — чтобы день читался как «сейчас», а не как пустой -->
+        <span v-if="isToday(d) && d.count === 0" class="now" />
       </span>
     </div>
   </div>
@@ -41,56 +47,60 @@ function missed(d: WeekDay): boolean {
 .days {
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: 7px;
 }
 .day-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
 }
+/* «ПН», «ВТ»: мелкий капс, как подписи в отчёте */
 .dow {
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 700;
   line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   opacity: 0.75;
 }
 .day-col.today .dow {
   opacity: 1;
-  font-weight: 800;
 }
 .day {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.55);
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
+  line-height: 1;
   box-sizing: border-box;
 }
-/* тренировка была: зелёный кружок с галочкой */
+/* на цветном листе тренировка — белый квадрат с галочкой в цвет листа */
 .day.done {
-  background: var(--green);
-  border-color: var(--green);
-  color: #fff;
+  background: #fff;
+  border-color: #fff;
+  color: var(--hero-ink, var(--accent));
 }
-/* прошедший день без тренировки: полупрозрачный белый на цветной подложке, с белым крестиком */
+/* прошедший день без тренировки: полупрозрачный белый, с белым крестиком */
 .day.missed {
-  background: rgba(255, 255, 255, 0.28);
-  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.24);
+  border-color: transparent;
   color: #fff;
   font-size: 13px;
 }
-/* сегодня: сплошная белая граница вместо полупрозрачной — поверх любого состояния */
+/* сегодня: сплошная белая рамка */
 .day.today {
-  border-color: #fff;
+  border: 2px solid #fff;
 }
 .now {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: #fff;
 }
 /*
@@ -101,7 +111,7 @@ function missed(d: WeekDay): boolean {
   opacity: 0.3;
 }
 
-/* на белой карточке */
+/* на обычном листе */
 .tone-card .dow {
   color: var(--hint);
   opacity: 1;
@@ -110,37 +120,40 @@ function missed(d: WeekDay): boolean {
   color: var(--text);
 }
 .tone-card .day {
-  border-color: rgba(128, 128, 128, 0.35);
+  border-color: var(--rule);
 }
-/* на белой карточке белый не виден — там пропуск серый */
+.tone-card .day.done {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
 .tone-card .day.missed {
-  background: rgba(128, 128, 128, 0.28);
-  border-color: rgba(128, 128, 128, 0.28);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--track);
+  border-color: transparent;
+  color: var(--hint);
 }
 .tone-card .now {
   background: var(--accent);
 }
 .tone-card .day.today {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.3);
 }
 
-/* компактная: в заголовках карточек */
+/* компактная: в карточках и отчёте */
 .size-sm {
   gap: 5px;
 }
 .size-sm .day-col {
-  gap: 3px;
+  gap: 4px;
 }
 .size-sm .dow {
-  font-size: 10px;
+  font-size: 9px;
 }
 .size-sm .day {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
   font-size: 12px;
-  border-width: 1.5px;
 }
 .size-sm .now {
   width: 5px;
@@ -148,8 +161,5 @@ function missed(d: WeekDay): boolean {
 }
 .size-sm .day.missed {
   font-size: 11px;
-}
-.size-sm .day.today {
-  box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.3);
 }
 </style>

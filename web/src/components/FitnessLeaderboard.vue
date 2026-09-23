@@ -252,10 +252,11 @@ onMounted(load);
   display: inline-flex;
   gap: 3px;
 }
+/* квадратики — тот же язык, что у полоски дней */
 .dot {
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: 2px;
   border: 1.5px solid rgba(128, 128, 128, 0.45);
   box-sizing: border-box;
 }

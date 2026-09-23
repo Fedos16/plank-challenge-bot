@@ -232,13 +232,16 @@ watch(() => props.challengeId, load);
 
           <!-- Игра: жизни и норма текущей недели -->
           <div
-            class="streak-hero"
+            class="streak-hero week-hero"
             :class="{
               out: data.game.lives.eliminated,
               closed: weekState === 'closed',
               risk: weekState === 'risk' || weekState === 'lost',
             }"
           >
+            <span v-if="data.game.currentWeek" class="hero-mark" aria-hidden="true">
+              {{ String(data.game.currentWeek.weekNumber).padStart(2, '0') }}
+            </span>
             <div class="hero-top">
               <span class="hero-kicker">{{ data.game.currentWeek ? `Неделя ${data.game.currentWeek.weekNumber}` : 'Жизни' }}</span>
               <span class="hero-lives">{{ hearts(data.game.lives.left, data.game.lives.total) }}</span>
@@ -248,7 +251,7 @@ watch(() => props.challengeId, load);
                 {{ data.game.currentWeek.done }}<span class="of">из {{ data.game.currentWeek.required }}</span>
               </div>
               <div class="lbl">{{ weekLabel }}</div>
-              <WeekStrip :days="data.game.currentWeek.days" tone="card" class="week-strip" />
+              <WeekStrip :days="data.game.currentWeek.days" tone="hero" class="week-strip" />
             </template>
             <div v-else class="lbl">
               {{ data.challenge.phase === 'upcoming' ? 'Челлендж ещё не начался' : 'Челлендж завершён' }}
@@ -444,8 +447,44 @@ watch(() => props.challengeId, load);
   border: 1.5px solid rgba(231, 76, 60, 0.4);
   font-size: 14px;
 }
-/* Неделя — типографикой на листе, цвет говорят только цифра и подпись */
+/*
+ * Неделя — сплошной цветной лист с типографикой отчёта: оранжевый — идёт, зелёный — норма
+ * закрыта, красный — пропускать уже нельзя, серый — вне зачёта. Цвет листа — в --hero-ink:
+ * им же рисуются галочки на белых квадратах дней.
+ */
+.week-hero {
+  --hero-ink: var(--accent);
+  position: relative;
+  overflow: hidden;
+  background: var(--hero-ink);
+  color: #fff;
+}
+.week-hero.closed {
+  --hero-ink: #1fa463;
+}
+.week-hero.risk {
+  --hero-ink: #de4336;
+}
+.week-hero.out {
+  --hero-ink: #7a7a82;
+}
+/* номер недели крупно, водяным знаком — как в шапке отчёта */
+.hero-mark {
+  position: absolute;
+  top: -22px;
+  right: -12px;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 128px;
+  line-height: 1;
+  letter-spacing: -6px;
+  color: #fff;
+  opacity: 0.14;
+  pointer-events: none;
+  user-select: none;
+}
 .hero-top {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -456,39 +495,41 @@ watch(() => props.challengeId, load);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--hint);
+  color: rgba(255, 255, 255, 0.82);
 }
+/* сердечки на белой плашке: на красном листе красные сердца иначе не видны */
 .hero-lives {
-  font-size: 16px;
+  padding: 3px 8px 2px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  line-height: 1.2;
   letter-spacing: 2px;
 }
-.streak-hero .num {
+.week-hero .num,
+.week-hero .lbl {
+  position: relative;
+}
+.week-hero .num {
   font-size: 56px;
 }
-.streak-hero .of {
+.week-hero .of {
   margin-left: 10px;
   font-size: 22px;
   font-weight: 600;
   letter-spacing: 0;
-  color: var(--hint);
+  color: rgba(255, 255, 255, 0.75);
 }
 .week-strip {
-  margin-top: 14px;
+  position: relative;
+  margin-top: 16px;
 }
-.streak-hero :deep(.days) {
+.week-hero :deep(.days) {
   justify-content: flex-start;
 }
-/* норма набрана — зелёная цифра */
-.streak-hero.closed .num {
-  color: var(--green);
-}
-/* пропускать уже нельзя — красная подпись */
-.streak-hero.risk .lbl {
-  color: var(--red);
-  font-weight: 700;
-}
-.streak-hero.out {
-  opacity: 0.6;
+/* пропускать уже нельзя — подпись жирнее */
+.week-hero.risk .lbl {
+  font-weight: 800;
 }
 .week-row {
   gap: 10px;

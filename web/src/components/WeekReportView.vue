@@ -314,7 +314,7 @@ watch(
           </div>
 
           <div class="training">
-            <WeekStrip :days="r.days" tone="card" size="sm" />
+            <WeekStrip :days="r.days" tone="card" size="sm" :mark-today="false" />
             <div class="training-text">
               {{ trainingText(r) }}
               <template v-if="gameNote(r)">
@@ -535,10 +535,13 @@ watch(
 .people {
   padding-top: 22px;
 }
+/* это h2 по смыслу, но выглядит как подпись раздела — общий крупный стиль h2 здесь не нужен */
 .section-title {
   margin: 0 0 6px;
+  font-family: var(--body);
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.3;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--hint);
