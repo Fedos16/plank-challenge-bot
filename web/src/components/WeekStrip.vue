@@ -24,7 +24,7 @@ function missed(d: WeekDay): boolean {
       v-for="d in days"
       :key="d.day"
       class="day-col"
-      :class="{ today: d.isToday, off: !d.inWindow }"
+      :class="{ today: d.isToday, off: !d.inWindow && d.count === 0 }"
       :title="d.day"
     >
       <span class="dow">{{ weekdayShortRu(d.day) }}</span>
@@ -93,7 +93,10 @@ function missed(d: WeekDay): boolean {
   border-radius: 50%;
   background: #fff;
 }
-/* день до вступления: за него участник не отвечает */
+/*
+ * пустой день до вступления: за него участник не отвечает. Тренировка в такой день не бледнеет —
+ * зачёт идёт по всей неделе челленджа, от вступления зависит только норма
+ */
 .day-col.off {
   opacity: 0.3;
 }

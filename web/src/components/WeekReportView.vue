@@ -78,6 +78,26 @@ const stateText = computed(() => {
 
 const isCurrent = computed(() => report.value?.week.state === 'current');
 
+/**
+ * Общий прогресс челленджа по времени: сколько дней позади, и где на этой шкале смотримая
+ * неделя. У бессрочного челленджа шкалы нет.
+ */
+const timeline = computed(() => {
+  const r = report.value;
+  const total = r?.challenge.daysTotal;
+  if (!r || !total) return null;
+  const day = Math.min(r.challenge.dayNumber, total);
+  const weekStart = (r.week.number - 1) * 7;
+  const left = total - day;
+  return {
+    percent: Math.round((day / total) * 100),
+    weekLeft: (weekStart / total) * 100,
+    weekWidth: (Math.min(7, total - weekStart) / total) * 100,
+    dayText: `день ${day} из ${total}`,
+    leftText: left > 0 ? `${plural(left, 'остался', 'осталось', 'осталось')} ${left} ${plural(left, 'день', 'дня', 'дней')}` : 'финиш',
+  };
+});
+
 /** Средний сдвиг группы словами: «в среднем — на 6% пути ближе». */
 const avgText = computed(() => {
   const avg = report.value?.totals.avgDeltaPercent;
@@ -158,16 +178,26 @@ function gameNote(r: WeekReportRow): { text: string; bad: boolean } | null {
 /** Любопытные цифры недели — внизу, для тех, кому интересно сравнить. */
 const highlights = computed(() => {
   const rows = report.value?.rows ?? [];
-  const best = (pick: (r: WeekReportRow) => number) => {
-    const top = rows.reduce<WeekReportRow | null>((acc, r) => (pick(r) > (acc ? pick(acc) : 0) ? r : acc), null);
-    return top ? { name: top.name, value: pick(top) } : null;
-  };
-  return [
-    { label: 'Дальше всех продвинулся к цели', item: best((r) => r.goal?.deltaPercent ?? 0), format: (v: number) => `на ${v}%` },
-    { label: 'Больше всех тренировок', item: best((r) => r.done), format: (v: number) => `${v}` },
-    { label: 'Дольше всех тренировался', item: best((r) => r.minutes), format: (v: number) => `${v} мин` },
-    { label: 'Больше всех сжёг', item: best((r) => r.kcal), format: (v: number) => `${v.toLocaleString('ru-RU')} ккал` },
-  ].filter((h) => h.item !== null);
+  const best = (pick: (r: WeekReportRow) => number) =>
+    rows.reduce<WeekReportRow | null>((acc, r) => (pick(r) > (acc ? pick(acc) : 0) ? r : acc), null);
+  const cards = [
+    { key: 'goal', label: 'Дальше всех к цели', pick: (r: WeekReportRow) => r.goal?.deltaPercent ?? 0, unit: () => 'пути', suffix: '%' },
+    {
+      key: 'workouts',
+      label: 'Больше тренировок',
+      pick: (r: WeekReportRow) => r.done,
+      unit: (v: number) => plural(v, 'тренировка', 'тренировки', 'тренировок'),
+    },
+    { key: 'minutes', label: 'Дольше всех', pick: (r: WeekReportRow) => r.minutes, unit: () => 'минут' },
+    { key: 'kcal', label: 'Больше всех сжёг', pick: (r: WeekReportRow) => r.kcal, unit: () => 'ккал' },
+  ];
+  return cards.flatMap((c) => {
+    const top = best(c.pick);
+    if (!top) return [];
+    const value = c.pick(top);
+    const text = value.toLocaleString('ru-RU') + ('suffix' in c ? c.suffix : '');
+    return [{ key: c.key, label: c.label, value: text, unit: c.unit(value), row: top }];
+  });
 });
 
 onMounted(() => {
@@ -201,6 +231,16 @@ watch(
         <div class="kicker">{{ report.challenge.title }}</div>
         <h1 class="title">Неделя {{ report.week.number }}</h1>
         <div class="dates">{{ rangeRu(report.week.start, report.week.end) }} · {{ stateText }}</div>
+        <div v-if="timeline" class="timeline" :aria-label="`Челлендж: ${timeline.dayText}`">
+          <div class="timeline-bar">
+            <span class="timeline-fill" :style="{ width: timeline.percent + '%' }" />
+            <span class="timeline-week" :style="{ left: timeline.weekLeft + '%', width: timeline.weekWidth + '%' }" />
+          </div>
+          <div class="timeline-legend">
+            <span>{{ timeline.dayText }}</span>
+            <span>{{ timeline.leftText }}</span>
+          </div>
+        </div>
         <nav class="weeks">
           <button :disabled="loading || report.week.number <= 1" @click="go(-1)">‹ неделя {{ report.week.number - 1 }}</button>
           <button :disabled="loading || report.week.number >= report.weeksAvailable" @click="go(1)">
@@ -305,12 +345,19 @@ watch(
       <section v-if="report.rows.length > 1" class="compare rise" :style="{ '--i': personal.length + 3 }">
         <h2 class="section-title">Для любопытных</h2>
         <p class="compare-hint">Цели у всех свои, так что это просто цифры недели, а не таблица победителей.</p>
-        <dl v-if="highlights.length" class="bests">
-          <div v-for="h in highlights" :key="h.label">
-            <dt>{{ h.label }}</dt>
-            <dd>{{ h.item!.name }} — {{ h.format(h.item!.value) }}</dd>
+        <div v-if="highlights.length" class="bests">
+          <div v-for="h in highlights" :key="h.key" class="best" :class="`best-${h.key}`">
+            <div class="best-label">{{ h.label }}</div>
+            <div class="best-value">
+              {{ h.value }}<span class="best-unit">{{ h.unit }}</span>
+            </div>
+            <div class="best-who">
+              <img v-if="h.row.photoUrl" :src="h.row.photoUrl" class="best-pic" alt="" />
+              <span v-else class="best-pic">{{ initials(h.row.name) }}</span>
+              <span class="best-name">{{ h.row.name }}</span>
+            </div>
           </div>
-        </dl>
+        </div>
       </section>
 
       <p v-if="error" class="error-text">{{ error }}</p>
@@ -388,6 +435,40 @@ watch(
   font-size: 14px;
   color: var(--hint);
 }
+/* общий прогресс челленджа: тонкая шкала, на ней рамкой — смотримая неделя */
+.timeline {
+  position: relative;
+  margin-top: 14px;
+}
+.timeline-bar {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--path-track);
+}
+.timeline-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--text);
+  opacity: 0.75;
+}
+.timeline-week {
+  position: absolute;
+  top: -4px;
+  height: 12px;
+  min-width: 6px;
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+.timeline-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--hint);
+}
 .weeks {
   position: relative;
   display: flex;
@@ -452,10 +533,10 @@ watch(
   border-top: 1px solid var(--rule);
 }
 .figures > div {
-  padding: 12px 0 0;
+  padding: 12px 4px 0;
+  text-align: center;
 }
 .figures > div + div {
-  padding-left: 12px;
   border-left: 1px solid var(--rule);
 }
 .figures dd {
@@ -649,24 +730,99 @@ watch(
   font-size: 13px;
   color: var(--hint);
 }
+/* плитки два в ряд; нечётная последняя — во всю ширину, чтобы сетка не хромала */
 .bests {
-  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
-.bests > div {
+.best {
+  --tone: var(--accent);
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px dashed var(--rule);
-  font-size: 14px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px 14px 14px;
+  border-radius: 16px;
+  background: var(--bg);
+  overflow: hidden;
 }
-.bests dt {
+.best:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+/* цветная черта сверху слева — у каждой плитки своя */
+.best::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 14px;
+  width: 28px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--tone);
+}
+.best-goal {
+  --tone: var(--green);
+}
+.best-workouts {
+  --tone: var(--accent);
+}
+.best-minutes {
+  --tone: var(--link);
+}
+.best-kcal {
+  --tone: var(--amber);
+}
+.best-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--hint);
 }
-.bests dd {
-  margin: 0;
+.best-value {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.best-unit {
+  margin-left: 5px;
+  font-family: var(--body);
+  font-size: 13px;
   font-weight: 600;
-  text-align: right;
+  letter-spacing: 0;
+  color: var(--hint);
+}
+.best-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 2px;
+}
+.best-pic {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--button);
+  color: var(--button-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.best-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- появление ---------- */

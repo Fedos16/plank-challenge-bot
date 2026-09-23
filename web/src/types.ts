@@ -751,7 +751,16 @@ export interface GoalWeek {
 
 /** Отчёт недели фитнес-челленджа: по ссылке из чата его открывает любой. */
 export interface WeekReport {
-  challenge: { id: number; title: string; timezone: string };
+  /** dayNumber/daysTotal — для полоски общего прогресса; у бессрочного daysTotal = null. */
+  challenge: {
+    id: number;
+    title: string;
+    timezone: string;
+    startDate: string;
+    endDate: string | null;
+    dayNumber: number;
+    daysTotal: number | null;
+  };
   week: {
     number: number;
     start: string;

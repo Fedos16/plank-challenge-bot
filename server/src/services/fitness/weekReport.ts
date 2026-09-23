@@ -51,7 +51,16 @@ export interface GoalWeek {
 }
 
 export interface WeekReport {
-  challenge: { id: number; title: string; timezone: string };
+  /** dayNumber/daysTotal — для полоски общего прогресса челленджа; у бессрочного daysTotal = null. */
+  challenge: {
+    id: number;
+    title: string;
+    timezone: string;
+    startDate: DayStr;
+    endDate: DayStr | null;
+    dayNumber: number;
+    daysTotal: number | null;
+  };
   week: {
     number: number;
     start: DayStr;
@@ -225,7 +234,15 @@ export async function getWeekReport(
   const deltas = rows.map((r) => r.goal?.deltaPercent).filter((d): d is number => typeof d === 'number');
   const evaluated = results.some((r) => r.weekIndex === weekIndex);
   return {
-    challenge: { id: ch.id, title: ch.title, timezone: ch.timezone },
+    challenge: {
+      id: ch.id,
+      title: ch.title,
+      timezone: ch.timezone,
+      startDate: timeline.startDate,
+      endDate: timeline.endDate,
+      dayNumber: timeline.dayNumber,
+      daysTotal: timeline.daysTotal,
+    },
     week: {
       number: weekIndex + 1,
       start: week.start,
