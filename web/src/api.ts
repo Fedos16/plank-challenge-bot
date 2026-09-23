@@ -125,6 +125,9 @@ export const api = {
     request<{ ok: boolean }>('/weight/' + id, { method: 'DELETE' }),
   addManualWeight: (data: ManualWeightInput) =>
     request<WeightOverview>('/weight', { method: 'POST', body: JSON.stringify(data) }),
+  /** Жир и мышцы к уже записанному взвешиванию; пустое значение стирает показатель. */
+  setWeightComposition: (id: number, data: Omit<ManualWeightInput, 'weightKg' | 'measuredAt'>) =>
+    request<WeightOverview>('/weight/' + id, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // --- фитнес-челлендж: цель, анкета, обхваты ---
   getFitness: (id: number) => request<FitnessOverview>(`/challenges/${id}/fitness`),

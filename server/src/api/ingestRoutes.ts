@@ -91,8 +91,10 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
         console.log(
           `[${provider}] пользователь=${hub.userId} взвешиваний=${measurements.length} новых=${result.created.length}`,
         );
-        // Как и у весов: о пачке молчим, о свежем одиночном замере пишем в ЛС
-        if (result.created.length === 1 && measurements.length === 1) await notifyNewMeasurement(result.created[0]!);
+        // Телефон шлёт скользящее окно, поэтому в выгрузке бывают и старые взвешивания. Пишем
+        // в ЛС только о самом свежем из новых — о старых notifyNewMeasurement промолчит сам
+        const newest = [...result.created].sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())[0];
+        if (newest) await notifyNewMeasurement(newest);
       }
 
       // Журнал переживает деплой, в отличие от логов контейнера: по нему потом видно,

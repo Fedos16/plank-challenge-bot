@@ -78,6 +78,9 @@ export interface SaveResult {
   updated: WeightEntry[];
 }
 
+/** Записи ближе этого — одно взвешивание, пришедшее разными путями. */
+const SAME_WEIGH_IN_MS = 60 * 1000;
+
 /**
  * Сохраняет взвешивания, пришедшие с телефона участника.
  *
@@ -101,20 +104,38 @@ export async function saveMeasurements(
       sourceOwnerId: ownerId,
     };
 
-    const existing = await prisma.weightEntry.findUnique({
-      where: { userId_measuredAt: { userId: ownerId, measuredAt: m.measuredAt } },
+    // Одно взвешивание из разных источников (Health Connect и облако Zepp) расходится
+    // по времени на секунды — ищем соседа в окне, а не только точное совпадение
+    const existing = await prisma.weightEntry.findFirst({
+      where: {
+        userId: ownerId,
+        measuredAt: {
+          gte: new Date(m.measuredAt.getTime() - SAME_WEIGH_IN_MS),
+          lte: new Date(m.measuredAt.getTime() + SAME_WEIGH_IN_MS),
+        },
+      },
+      orderBy: { measuredAt: 'asc' },
     });
 
     if (existing) {
       // Метрики одного взвешивания могут приезжать разными выгрузками (Health Connect шлёт вес и
-      // жир отдельными точками): пустое значение не затирает уже известное
+      // жир отдельными точками): пустое значение не затирает уже известное. Момент берём у
+      // первой записи — иначе соседняя запись с тем же моментом упёрлась бы в уникальный ключ
       const merged = {
-        ...data,
+        weightKg: data.weightKg,
         bodyFat: data.bodyFat ?? existing.bodyFat,
         water: data.water ?? existing.water,
         muscle: data.muscle ?? existing.muscle,
+        sourceOwnerId: ownerId,
       };
-      result.updated.push(await prisma.weightEntry.update({ where: { id: existing.id }, data: merged }));
+      // облако Zepp каждый час присылает всю историю — неизменные записи не трогаем
+      const same =
+        merged.weightKg === existing.weightKg &&
+        merged.bodyFat === existing.bodyFat &&
+        merged.water === existing.water &&
+        merged.muscle === existing.muscle &&
+        existing.sourceOwnerId === ownerId;
+      if (!same) result.updated.push(await prisma.weightEntry.update({ where: { id: existing.id }, data: merged }));
       continue;
     }
 
@@ -201,6 +222,89 @@ export async function addManualWeight(
 export async function deleteEntry(userId: number, id: number): Promise<boolean> {
   const r = await prisma.weightEntry.deleteMany({ where: { id, userId } });
   return r.count > 0;
+}
+
+export interface CompositionInput {
+  /** undefined — не трогать, null — стереть. */
+  bodyFat?: number | null;
+  water?: number | null;
+  /** Мышцы долей от веса, %. */
+  muscle?: number | null;
+  /** Мышцы массой — пересчитываются в долю от веса этого взвешивания. */
+  muscleKg?: number | null;
+}
+
+/**
+ * Дописывает состав тела к уже записанному взвешиванию. Весы с закрытым приложением
+ * (Mi Body Composition Scale 2 и Zepp Life) отдают в хранилище здоровья только вес —
+ * жир и мышцы человек переносит с экрана приложения весов сам: в кабинете или ответом боту.
+ */
+export async function setComposition(
+  userId: number,
+  entryId: number,
+  input: CompositionInput,
+): Promise<WeightEntry | ManualWeightError | 'not_found'> {
+  const entry = await prisma.weightEntry.findFirst({ where: { id: entryId, userId } });
+  if (!entry) return 'not_found';
+
+  const data: { bodyFat?: number | null; water?: number | null; muscle?: number | null } = {};
+  for (const field of ['bodyFat', 'water', 'muscle'] as const) {
+    if (input[field] === undefined) continue;
+    const v = manualPercent(input[field]);
+    if (v === 'bad') return 'bad_percent';
+    data[field] = v;
+  }
+  if (input.muscleKg !== undefined) {
+    const kg = input.muscleKg;
+    if (kg === null || kg === 0) data.muscle = null;
+    else if (!Number.isFinite(kg) || kg < 0 || kg >= entry.weightKg) return 'bad_muscle_kg';
+    else data.muscle = musclePctOf(entry.weightKg, kg);
+  }
+
+  return prisma.weightEntry.update({ where: { id: entry.id }, data });
+}
+
+/** Свежее этого взвешивание не ищем: ответ боту относится к недавнему замеру. */
+const COMPOSITION_REPLY_HOURS = 48;
+
+/** Последнее взвешивание, к которому можно дописать состав ответом боту. */
+export async function latestEntryForComposition(userId: number): Promise<WeightEntry | null> {
+  return prisma.weightEntry.findFirst({
+    where: { userId, measuredAt: { gte: dayjs().subtract(COMPOSITION_REPLY_HOURS, 'hour').toDate() } },
+    orderBy: { measuredAt: 'desc' },
+  });
+}
+
+/**
+ * В чём человек вводит мышцы: как выбрал в кабинете, иначе как в последней цели, иначе
+ * килограммы — так их показывают приложения весов. Зеркало muscleUnitOf во фронте.
+ */
+export async function preferredMuscleUnit(userId: number): Promise<'kg' | 'percent'> {
+  const profile = await prisma.userBodyProfile.findUnique({ where: { userId } });
+  if (profile?.muscleUnit === 'kg' || profile?.muscleUnit === 'percent') return profile.muscleUnit;
+  const goal = await prisma.participantGoal.findFirst({
+    where: { participation: { userId } },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return goal?.muscleUnit === 'percent' ? 'percent' : 'kg';
+}
+
+/** Состав взвешивания одной строкой для сообщений бота; мышцы — в единице человека. */
+export function compositionLine(entry: WeightEntry, muscleUnit: 'kg' | 'percent'): string {
+  const fmt = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+  const muscle =
+    entry.muscle === null
+      ? null
+      : muscleUnit === 'kg'
+        ? `мышцы ${fmt(muscleKgOf(entry.weightKg, entry.muscle))} кг`
+        : `мышцы ${fmt(entry.muscle)}%`;
+  return [
+    entry.bodyFat !== null ? `жир ${fmt(entry.bodyFat)}%` : null,
+    muscle,
+    entry.water !== null ? `вода ${fmt(entry.water)}%` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /** Последнее взвешивание не позже момента `at` (для дельт за период). */
@@ -292,12 +396,18 @@ export async function notifyNewMeasurement(entry: WeightEntry): Promise<boolean>
         : `${diff > 0 ? '+' : '−'}${formatKg(Math.abs(diff))} за ${days} дн.`,
     );
   }
-  const composition = [
-    entry.bodyFat !== null ? `жир ${entry.bodyFat}%` : null,
-    entry.muscle !== null ? `мышцы ${entry.muscle}%` : null,
-    entry.water !== null ? `вода ${entry.water}%` : null,
-  ].filter(Boolean);
-  if (composition.length) lines.push(composition.join(' · '));
+  const muscleUnit = await preferredMuscleUnit(user.id);
+  const composition = compositionLine(entry, muscleUnit);
+  if (composition) {
+    lines.push(composition);
+  } else {
+    // весы вроде Mi Scale 2 отдают в хранилище здоровья один вес — состав человек дописывает сам
+    lines.push(
+      '',
+      `Жир и мышцы с экрана весов пришлите ответом: <code>24,4 ${muscleUnit === 'kg' ? '58,7' : '71,7'}</code>` +
+        ` — жир %, мышцы ${muscleUnit === 'kg' ? 'кг' : '%'}. Третьим числом можно воду, %.`,
+    );
+  }
 
   const { bot } = await import('../bot/bot');
   if (!bot) return false;

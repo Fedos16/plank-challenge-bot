@@ -20,7 +20,7 @@ import {
   getPersonalDetail,
   listPersonal,
 } from '../services/personal';
-import { addManualWeight, deleteEntry, getWeightOverview } from '../services/weight';
+import { addManualWeight, deleteEntry, getWeightOverview, setComposition } from '../services/weight';
 import {
   challengeTimeline,
   getChallengeById,
@@ -267,6 +267,25 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       muscleKg: num(body.muscleKg),
       measuredAt,
     });
+    if (typeof result === 'string') return reply.code(400).send({ error: result });
+    return getWeightOverview(req.ctx!.user.id);
+  });
+
+  // Состав тела к уже записанному взвешиванию: весы вроде Mi Scale 2 присылают только вес
+  app.patch('/weight/:id', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    // нет поля — не трогаем, пустое — стираем
+    const opt = (k: string) => (!(k in body) ? undefined : body[k] === null || body[k] === '' ? null : Number(body[k]));
+
+    const result = await setComposition(req.ctx!.user.id, id, {
+      bodyFat: opt('bodyFat'),
+      water: opt('water'),
+      muscle: opt('muscle'),
+      muscleKg: opt('muscleKg'),
+    });
+    if (result === 'not_found') return reply.code(404).send({ error: 'not_found' });
     if (typeof result === 'string') return reply.code(400).send({ error: result });
     return getWeightOverview(req.ctx!.user.id);
   });

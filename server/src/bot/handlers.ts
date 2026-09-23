@@ -19,6 +19,14 @@ import {
 } from '../services/submissions';
 import { reportSick } from '../services/sick';
 import { sendDailyReport, escapeHtml, formatRulesMessageHtml } from '../services/report';
+import { parseCompositionText } from '../services/composition';
+import {
+  compositionLine,
+  latestEntryForComposition,
+  preferredMuscleUnit,
+  setComposition,
+  type CompositionInput,
+} from '../services/weight';
 
 async function isAdminTg(telegramId: bigint): Promise<boolean> {
   if (config.adminTelegramIds.some((id) => id === telegramId)) return true;
@@ -290,6 +298,47 @@ export function registerHandlers(): void {
     await ctx.reply(note, {
       reply_parameters: { message_id: ctx.message.message_id },
       parse_mode: 'HTML',
+    });
+  });
+
+  // Состав тела ответом на сообщение о взвешивании: весы вроде Mi Scale 2 отдают телефону
+  // только вес, жир и мышцы человек переписывает с экрана приложения весов
+  bot.on('message:text', async (ctx, next) => {
+    if (ctx.chat.type !== 'private' || ctx.message.text.startsWith('/')) return next();
+    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from.id) } });
+    if (!user) return next();
+
+    const muscleUnit = await preferredMuscleUnit(user.id);
+    const parsed = parseCompositionText(ctx.message.text, muscleUnit);
+    if (!parsed) return next();
+
+    const entry = await latestEntryForComposition(user.id);
+    if (!entry) {
+      await ctx.reply('Не нашёл взвешивания за последние двое суток — запишите вес во вкладке «Тело» в приложении.');
+      return;
+    }
+
+    const input: CompositionInput = {};
+    if (parsed.bodyFat !== undefined) input.bodyFat = parsed.bodyFat;
+    if (parsed.water !== undefined) input.water = parsed.water;
+    if (parsed.muscle) input[parsed.muscle.unit === 'kg' ? 'muscleKg' : 'muscle'] = parsed.muscle.value;
+
+    const saved = await setComposition(user.id, entry.id, input);
+    if (saved === 'bad_muscle_kg') {
+      await ctx.reply('Мышц больше, чем весите вы сами, не бывает. Если это проценты, допишите «%»: <code>24,4 71,7%</code>.', {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+    if (typeof saved === 'string') {
+      await ctx.reply('Жир и вода — в процентах, от 0 до 100. Пример: <code>24,4 58,7</code>.', { parse_mode: 'HTML' });
+      return;
+    }
+
+    const weight = saved.weightKg.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+    const when = dayjs(saved.measuredAt).tz(config.defaultTimezone).format('DD.MM HH:mm');
+    await ctx.reply(`✅ Дописал к взвешиванию ${weight} кг (${when}): ${compositionLine(saved, muscleUnit)}`, {
+      reply_parameters: { message_id: ctx.message.message_id },
     });
   });
 }

@@ -174,6 +174,33 @@ function muscleText(e: WeightPoint): string | null {
   return value === null ? null : `мышцы ${formatNum(value)} ${muscleUnitLabel.value}`;
 }
 
+/** Какое взвешивание сейчас дополняем составом: весы вроде Mi Scale 2 присылают один вес. */
+const editingId = ref<number | null>(null);
+const compForm = reactive({ bodyFat: '', muscle: '' });
+
+function openComposition(e: WeightPoint) {
+  if (editingId.value === e.id) {
+    editingId.value = null;
+    return;
+  }
+  const muscle = muscleUnit.value === 'kg' ? e.muscleKg : e.muscle;
+  compForm.bodyFat = e.bodyFat === null ? '' : formatNum(e.bodyFat);
+  compForm.muscle = muscle === null ? '' : formatNum(muscle);
+  editingId.value = e.id;
+}
+
+function saveComposition(id: number) {
+  const muscle = numOrNull(compForm.muscle);
+  void run(async () => {
+    weight.value = await api.setWeightComposition(id, {
+      bodyFat: numOrNull(compForm.bodyFat),
+      ...(muscleUnit.value === 'kg' ? { muscleKg: muscle } : { muscle }),
+    });
+    editingId.value = null;
+    emit('changed');
+  });
+}
+
 async function removeWeight(id: number) {
   if (!(await confirmAction('Удалить это взвешивание?'))) return;
   void run(async () => {
@@ -276,20 +303,42 @@ onMounted(load);
     <!-- История взвешиваний -->
     <div v-if="recent.length" class="card">
       <h3>История веса</h3>
-      <div v-for="(e, i) in recent" :key="e.id" class="row">
-        <div class="name">
-          {{ formatDayHumanRu(e.day, today) }}
-          <div class="meta">{{ formatTimeRu(e.measuredAt) }}</div>
+      <template v-for="(e, i) in recent" :key="e.id">
+        <div class="row">
+          <div class="name">
+            {{ formatDayHumanRu(e.day, today) }}
+            <div class="meta">{{ formatTimeRu(e.measuredAt) }}</div>
+          </div>
+          <!-- в строке место под один показатель состава: тот, за которым человек следит.
+               Нажатие открывает правку — жир и мышцы с весов без выгрузки состава вводятся тут -->
+          <button v-if="e.bodyFat === null && e.muscle === null" class="comp add" :disabled="busy" @click="openComposition(e)">
+            ＋ жир, мышцы
+          </button>
+          <button v-else class="comp meta" :disabled="busy" @click="openComposition(e)">
+            {{ goalMetric === 'muscle' && muscleText(e) ? muscleText(e) : e.bodyFat !== null ? `жир ${formatNum(e.bodyFat)}%` : muscleText(e) }}
+          </button>
+          <!-- сдвиг от предыдущего взвешивания: к цели зелёный, от цели красный -->
+          <div v-if="weightDelta(i) !== null" class="delta" :class="deltaTone(weightDelta(i))">
+            {{ formatDelta(weightDelta(i)!) }}
+          </div>
+          <div class="fire">{{ formatNum(e.weightKg) }}</div>
+          <button class="row-x" :disabled="busy" @click="removeWeight(e.id)">✕</button>
         </div>
-        <!-- в строке место под один показатель состава: тот, за которым человек следит -->
-        <div v-if="goalMetric === 'muscle' && muscleText(e)" class="meta">{{ muscleText(e) }}</div>
-        <div v-else-if="e.bodyFat !== null" class="meta">жир {{ e.bodyFat }}%</div>
-        <!-- сдвиг от предыдущего взвешивания: к цели зелёный, от цели красный -->
-        <div v-if="weightDelta(i) !== null" class="delta" :class="deltaTone(weightDelta(i))">
-          {{ formatDelta(weightDelta(i)!) }}
+        <div v-if="editingId === e.id" class="comp-form">
+          <label class="field">
+            <span class="lbl">Жир, %</span>
+            <input v-model="compForm.bodyFat" inputmode="decimal" placeholder="24,4" @keyup.enter="saveComposition(e.id)" />
+          </label>
+          <label class="field">
+            <span class="lbl">Мышцы, {{ muscleUnitLabel }}</span>
+            <input v-model="compForm.muscle" inputmode="decimal" placeholder="—" @keyup.enter="saveComposition(e.id)" />
+          </label>
+          <button class="btn small" :disabled="busy" @click="saveComposition(e.id)">Сохранить</button>
         </div>
-        <div class="fire">{{ formatNum(e.weightKg) }}</div>
-        <button class="row-x" :disabled="busy" @click="removeWeight(e.id)">✕</button>
+      </template>
+      <div class="muted" style="margin-top: 8px">
+        Весы прислали только вес? Жир и мышцы с экрана приложения весов допишите здесь или ответом боту на
+        сообщение о взвешивании.
       </div>
     </div>
   </template>
@@ -320,6 +369,29 @@ onMounted(load);
   gap: 8px;
   margin-top: 12px;
   align-items: center;
+}
+.comp {
+  border: none;
+  background: none;
+  padding: 4px 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.comp.add {
+  color: var(--link);
+  font-weight: 600;
+}
+.comp-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: end;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+}
+.comp-form .field {
+  margin-bottom: 0;
 }
 .row-x {
   border: none;
