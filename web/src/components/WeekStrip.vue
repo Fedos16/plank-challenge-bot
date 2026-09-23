@@ -4,7 +4,7 @@ import { weekdayShortRu } from '../helpers';
 
 /**
  * Полоска недели: день недели над кружком, галочка за тренировку, приглушённый кружок с крестиком
- * за прошедший день без неё, обводка у сегодняшнего. Один язык для обзора и журнала.
+ * за прошедший день без неё, обводка и точка в центре у сегодняшнего. Один язык для обзора и журнала.
  * tone=hero — на цветной подложке, tone=card — на белой карточке; size=sm — компактная.
  */
 withDefaults(defineProps<{ days: WeekDay[]; tone?: 'hero' | 'card'; size?: 'md' | 'sm' }>(), {
@@ -30,6 +30,8 @@ function missed(d: WeekDay): boolean {
       <span class="dow">{{ weekdayShortRu(d.day) }}</span>
       <span class="day" :class="{ done: d.count > 0, missed: missed(d), today: d.isToday }">
         {{ d.count > 0 ? '✓' : missed(d) ? '×' : '' }}
+        <!-- сегодня, пока тренировки нет: точка — чтобы день читался как «сейчас», а не как пустой -->
+        <span v-if="d.isToday && d.count === 0" class="now" />
       </span>
     </div>
   </div>
@@ -85,6 +87,12 @@ function missed(d: WeekDay): boolean {
 .day.today {
   border-color: #fff;
 }
+.now {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+}
 /* день до вступления: за него участник не отвечает */
 .day-col.off {
   opacity: 0.3;
@@ -107,6 +115,9 @@ function missed(d: WeekDay): boolean {
   border-color: rgba(128, 128, 128, 0.28);
   color: rgba(255, 255, 255, 0.9);
 }
+.tone-card .now {
+  background: var(--accent);
+}
 .tone-card .day.today {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.3);
@@ -127,6 +138,10 @@ function missed(d: WeekDay): boolean {
   height: 22px;
   font-size: 12px;
   border-width: 1.5px;
+}
+.size-sm .now {
+  width: 5px;
+  height: 5px;
 }
 .size-sm .day.missed {
   font-size: 11px;
