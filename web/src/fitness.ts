@@ -1,5 +1,15 @@
 import { ApiError } from './api';
-import type { FitnessOverview, GoalMetric, GoalType, MeasurementKind, MuscleUnit, Verdict } from './types';
+import { daysBetweenISO } from './helpers';
+import type {
+  FitnessOverview,
+  GoalMetric,
+  GoalType,
+  MeasurementKind,
+  MuscleUnit,
+  Verdict,
+  WeekStatus,
+  Workout,
+} from './types';
 
 export const GOAL_LABEL: Record<GoalType, string> = {
   lose_weight: 'Похудеть',
@@ -83,6 +93,40 @@ export const SPORT_EMOJI: Record<string, string> = {
   ski: '⛷️',
   other: '💪',
 };
+
+/** День тренировки в поясе челленджа — по нему она попадает в неделю. */
+export function challengeDay(iso: string, tz: string): string {
+  return new Date(iso).toLocaleDateString('sv-SE', { timeZone: tz });
+}
+
+export interface WorkoutWeek {
+  /** 0 — тренировки до старта челленджа. */
+  weekNumber: number;
+  items: Workout[];
+}
+
+/** Журнал по неделям челленджа, от свежих к старым; внутри недели порядок как пришёл. */
+export function groupWorkoutsByWeek(workouts: Workout[], startDate: string, tz: string): WorkoutWeek[] {
+  const byWeek = new Map<number, Workout[]>();
+  for (const w of workouts) {
+    const day = challengeDay(w.startedAt, tz);
+    const weekNumber = day < startDate ? 0 : Math.floor(daysBetweenISO(startDate, day) / 7) + 1;
+    byWeek.set(weekNumber, [...(byWeek.get(weekNumber) ?? []), w]);
+  }
+  return [...byWeek.entries()].sort((a, b) => b[0] - a[0]).map(([weekNumber, items]) => ({ weekNumber, items }));
+}
+
+/** Итог недели одной строкой: у закрытой — с отметкой, у текущей — просто счёт. */
+export function weekSummary(
+  closed: { status: WeekStatus; done: number; required: number } | null | undefined,
+  current: { done: number; required: number } | null | undefined,
+): string {
+  if (closed) {
+    const mark = closed.status === 'passed' ? '✅' : closed.status === 'forgiven' ? '🤝' : '💔';
+    return `${mark} ${closed.done} из ${closed.required}`;
+  }
+  return current ? `${current.done} из ${current.required}` : '';
+}
 
 /**
  * Название тренировки. Вид, которого нет в нашем справочнике, устройство присылает как «other»

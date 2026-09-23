@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { currentMetric, goalProgress } from '../src/services/fitness/goals';
+import type { ParticipantGoal, WeightEntry } from '@prisma/client';
+import { currentMetric, goalProgress, progressFor } from '../src/services/fitness/goals';
 import { muscleKgOf, musclePctOf } from '../src/services/weight';
 
 test('goalProgress: похудение — движение вниз', () => {
@@ -111,4 +112,20 @@ test('мышцы: килограммы переживают хранение в 
       assert.equal(muscleKgOf(weightKg, musclePctOf(weightKg, entered)), entered, `${entered} кг при весе ${weightKg}`);
     }
   }
+});
+
+test('progressFor: без замеров по показателю «сейчас» стоит на старте', () => {
+  const goal = {
+    goalType: 'lose_fat',
+    targetValue: 18,
+    startWeightKg: null,
+    startBodyFat: 24,
+    startMuscle: null,
+    muscleUnit: 'percent',
+  } as ParticipantGoal;
+  // весы прислали вес, но без % жира
+  const entries = [{ measuredAt: new Date('2026-09-20T08:00:00Z'), weightKg: 80, bodyFat: null }] as WeightEntry[];
+  const p = progressFor(goal, entries);
+  assert.equal(p.current, 24);
+  assert.equal(p.percent, 0);
 });

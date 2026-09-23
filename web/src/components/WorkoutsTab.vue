@@ -3,18 +3,21 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { api } from '../api';
 import type { FitnessOverview, WeekDay, Workout } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { daysBetweenISO, formatDateRu, formatDayHumanRu, formatTimeRu, todayInZone } from '../helpers';
+import { formatDateRu, formatDayHumanRu, formatTimeRu, todayInZone } from '../helpers';
 import WeekStrip from './WeekStrip.vue';
 import {
   SOURCE_LABEL,
   SPORT_EMOJI,
   SPORT_LABEL,
   VERDICT_LABEL,
+  challengeDay as dayInTz,
   errorText,
+  groupWorkoutsByWeek,
   newClientId,
   numOrNull,
   sessionTitle,
   sportTitle,
+  weekSummary,
 } from '../fitness';
 
 const props = defineProps<{ challengeId: number; overview: FitnessOverview }>();
@@ -61,47 +64,22 @@ async function load() {
 
 /** День тренировки в поясе челленджа — по нему она попадает в неделю. */
 function challengeDay(iso: string): string {
-  return new Date(iso).toLocaleDateString('sv-SE', { timeZone: props.overview.challenge.timezone });
-}
-
-interface WeekGroup {
-  weekNumber: number;
-  summary: string;
-  /** Полоска недели; null — до старта или неделя без итога. */
-  days: WeekDay[] | null;
-  items: Workout[];
+  return dayInTz(iso, props.overview.challenge.timezone);
 }
 
 const today = computed(() => todayInZone(props.overview.challenge.timezone));
 
 /** Журнал по неделям челленджа, от свежих к старым; у недели — её итог, если он уже есть. */
-const groups = computed<WeekGroup[]>(() => {
-  const start = props.overview.challenge.startDate;
+const groups = computed(() => {
+  const { startDate, timezone } = props.overview.challenge;
   const game = props.overview.game;
-  const byWeek = new Map<number, Workout[]>();
-  for (const w of workouts.value) {
-    const day = challengeDay(w.startedAt);
-    const weekNumber = day < start ? 0 : Math.floor(daysBetweenISO(start, day) / 7) + 1;
-    byWeek.set(weekNumber, [...(byWeek.get(weekNumber) ?? []), w]);
-  }
-
-  return [...byWeek.entries()]
-    .sort((a, b) => b[0] - a[0])
-    .map(([weekNumber, items]) => {
-      const closed = game.history.find((h) => h.weekNumber === weekNumber);
-      const current = game.currentWeek?.weekNumber === weekNumber ? game.currentWeek : null;
-      let summary = '';
-      let days: WeekDay[] | null = null;
-      if (closed) {
-        const mark = closed.status === 'passed' ? '✅' : closed.status === 'forgiven' ? '🤝' : '💔';
-        summary = `${mark} ${closed.done} из ${closed.required}`;
-        days = closed.days.length ? closed.days : null;
-      } else if (current) {
-        summary = `${current.done} из ${current.required}`;
-        days = current.days;
-      }
-      return { weekNumber, summary, days, items };
-    });
+  return groupWorkoutsByWeek(workouts.value, startDate, timezone).map((g) => {
+    const closed = game.history.find((h) => h.weekNumber === g.weekNumber);
+    const current = game.currentWeek?.weekNumber === g.weekNumber ? game.currentWeek : null;
+    // полоска недели; null — до старта или неделя без итога
+    const days: WeekDay[] | null = closed ? (closed.days.length ? closed.days : null) : (current?.days ?? null);
+    return { ...g, summary: weekSummary(closed, current), days };
+  });
 });
 
 function meta(w: Workout): string {

@@ -250,7 +250,8 @@ export function progressFor(goal: ParticipantGoal, entries: WeightEntry[]): Goal
   const muscleUnit = muscleUnitOf(goal);
   const unit: MuscleUnit = metric === 'weightKg' ? 'kg' : metric === 'bodyFat' ? 'percent' : muscleUnit;
   const start = goal[START_FIELD[metric]];
-  const current = currentMetric(entries, metric, muscleUnit);
+  // стартовое значение — тоже замер: пока новых по этому показателю нет, «сейчас» стоит на нём
+  const current = currentMetric(entries, metric, muscleUnit) ?? start;
   return {
     metric,
     unit,

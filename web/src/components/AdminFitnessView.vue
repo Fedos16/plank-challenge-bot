@@ -10,18 +10,22 @@ import type {
   Workout,
 } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { formatDateRu, formatDateTimeRu, todayISO } from '../helpers';
+import { daysBetweenISO, formatDateRu, formatDateTimeRu, formatTimeRu, todayISO } from '../helpers';
 import {
   GOAL_EMOJI,
   GOAL_LABEL,
   SOURCE_LABEL,
+  SPORT_EMOJI,
   UNIT_LABEL,
   VERDICT_LABEL,
+  challengeDay,
   errorText,
   formatNum,
+  groupWorkoutsByWeek,
   hearts,
   sessionTitle,
   sportTitle,
+  weekSummary,
 } from '../fitness';
 
 const challenges = ref<AdminChallengeRow[]>([]);
@@ -208,14 +212,41 @@ async function toggleModeration(p: AdminFitnessParticipant) {
   }, '');
 }
 
-async function setExcluded(p: AdminFitnessParticipant, w: Workout, excluded: boolean) {
+/** Итог недели участника, если она уже закрыта. */
+function closedWeek(p: AdminFitnessParticipant, weekNumber: number): AdminWeekRow | undefined {
+  return weeks.value
+    .find((w) => w.weekNumber === weekNumber)
+    ?.rows.find((r) => r.participationId === p.participationId);
+}
+
+/** Тренировки участника по неделям — как в его журнале, с итогом недели в шапке. */
+const moderatedWeeks = computed(() => {
+  const s = settings.value;
+  const p = people.value.find((x) => x.participationId === moderating.value);
+  if (!s || !p) return [];
+  const today = challengeDay(new Date().toISOString(), s.timezone);
+  const currentWeek = today < s.startDate ? 0 : Math.floor(daysBetweenISO(s.startDate, today) / 7) + 1;
+  return groupWorkoutsByWeek(moderated.value, s.startDate, s.timezone).map((g) => ({
+    ...g,
+    summary: weekSummary(closedWeek(p, g.weekNumber), g.weekNumber === currentWeek ? p.week : null),
+  }));
+});
+
+/** После правки зачёта. Закрытая неделя — снимок: без пересчёта она не сняла бы и не вернула жизнь. */
+async function afterModeration(id: number, p: AdminFitnessParticipant, weekNumber: number) {
+  const closed = closedWeek(p, weekNumber);
+  if (closed) await api.adminWeekAction(id, closed.id, 'recalc');
+  moderated.value = (await api.adminParticipantWorkouts(id, p.participationId)).workouts;
+  await reloadGame();
+}
+
+async function setExcluded(p: AdminFitnessParticipant, w: Workout, weekNumber: number, excluded: boolean) {
   const id = selectedId.value;
   if (!id) return;
   await run(async () => {
     await api.adminExcludeWorkout(id, w.id, excluded);
-    moderated.value = (await api.adminParticipantWorkouts(id, p.participationId)).workouts;
-    await reloadGame();
-  }, excluded ? 'Снята с зачёта' : 'Возвращена в зачёт');
+    await afterModeration(id, p, weekNumber);
+  }, excluded ? 'Тренировка отменена' : 'Тренировка засчитана');
 }
 
 /** Последние выгрузки с телефона: видно, что приехало и включены ли нужные галочки. */
@@ -251,13 +282,12 @@ function summaryText(sync: IngestSync): string {
 }
 
 /** Ручной зачёт: правило отсекло настоящую тренировку — короткую сессию или вторую за день. */
-async function setForceCounted(p: AdminFitnessParticipant, w: Workout, forceCounted: boolean) {
+async function setForceCounted(p: AdminFitnessParticipant, w: Workout, weekNumber: number, forceCounted: boolean) {
   const id = selectedId.value;
   if (!id) return;
   await run(async () => {
     await api.adminForceCountWorkout(id, w.id, forceCounted);
-    moderated.value = (await api.adminParticipantWorkouts(id, p.participationId)).workouts;
-    await reloadGame();
+    await afterModeration(id, p, weekNumber);
   }, forceCounted ? 'Засчитана вручную' : 'Ручной зачёт снят');
 }
 
@@ -445,42 +475,46 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- Модерация: снять тренировку с зачёта («фейк» в планке) или засчитать вручную -->
+          <!-- Модерация: отменить тренировку («фейк» в планке) или засчитать вручную -->
           <div v-if="moderating === p.participationId" class="moderation">
-            <div v-for="w in moderated" :key="w.id" class="list-item">
-              <div class="grow">
-                <div>
-                  {{ sportTitle(w) }} · {{ w.durationMin }} мин
-                  <span class="muted">· {{ VERDICT_LABEL[w.verdict] }}</span>
-                  <span v-if="w.forceCounted" class="muted"> · засчитана вручную</span>
-                </div>
-                <div class="muted">{{ formatDateTimeRu(w.startedAt) }} · {{ SOURCE_LABEL[w.source] ?? w.source }}</div>
-                <div v-if="w.session" class="muted">
-                  Часть занятия «{{ sessionTitle(w.session.parts) }}», вместе {{ w.session.durationMin }} мин
-                </div>
+            <div v-for="g in moderatedWeeks" :key="g.weekNumber" class="mod-week">
+              <div class="week-head">
+                <b>{{ g.weekNumber > 0 ? `Неделя ${g.weekNumber}` : 'До старта' }}</b>
+                <span class="muted">{{ g.summary }}</span>
               </div>
-              <button v-if="w.verdict !== 'excluded'" class="btn small secondary" @click="setExcluded(p, w, true)">Снять</button>
-              <button v-else class="btn small" @click="setExcluded(p, w, false)">Вернуть</button>
-              <button
-                v-if="w.forceCounted"
-                class="btn small secondary"
-                @click="setForceCounted(p, w, false)"
-              >
-                Отменить зачёт
-              </button>
-              <button
-                v-else-if="w.verdict !== 'counted' && w.verdict !== 'excluded'"
-                class="btn small"
-                @click="setForceCounted(p, w, true)"
-              >
-                Засчитать
-              </button>
+              <div v-for="w in g.items" :key="w.id" class="list-item">
+                <div class="ico">{{ SPORT_EMOJI[w.sport] ?? '💪' }}</div>
+                <div class="grow">
+                  <div>
+                    {{ sportTitle(w) }} · {{ w.durationMin }} мин
+                    <span class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
+                    <span v-if="w.forceCounted" class="muted"> · засчитана вручную</span>
+                  </div>
+                  <div class="muted">
+                    {{ formatDateRu(challengeDay(w.startedAt, settings.timezone)) }}, {{ formatTimeRu(w.startedAt) }} ·
+                    {{ SOURCE_LABEL[w.source] ?? w.source }}
+                  </div>
+                  <div v-if="w.session" class="muted">
+                    Часть занятия «{{ sessionTitle(w.session.parts) }}», вместе {{ w.session.durationMin }} мин
+                  </div>
+                </div>
+                <button v-if="w.verdict === 'excluded'" class="btn small" @click="setExcluded(p, w, g.weekNumber, false)">
+                  ✅ Засчитать
+                </button>
+                <button v-else-if="w.forceCounted" class="btn small secondary" @click="setForceCounted(p, w, g.weekNumber, false)">
+                  Отменить
+                </button>
+                <button v-else-if="w.verdict === 'counted'" class="btn small secondary" @click="setExcluded(p, w, g.weekNumber, true)">
+                  Отменить
+                </button>
+                <button v-else class="btn small" @click="setForceCounted(p, w, g.weekNumber, true)">✅ Засчитать</button>
+              </div>
             </div>
             <div v-if="!moderated.length" class="muted">Тренировок нет.</div>
             <div class="muted" style="margin-top: 6px">
               «Засчитать» проводит тренировку мимо минимальной длительности и лимита дня: для случаев,
-              когда часы разрезали занятие или человек тренировался дважды. Уже закрытую неделю ни снятие,
-              ни ручной зачёт сами не меняют — после них нажмите «Пересчитать» в разделе «Недели».
+              когда часы разрезали занятие или человек тренировался дважды. Итог уже закрытой недели
+              пересчитывается сразу — вместе с жизнью, если от тренировки зависела норма.
             </div>
           </div>
         </div>
@@ -554,6 +588,40 @@ onMounted(async () => {
   padding: 4px 10px 8px;
   border-radius: 10px;
   background: var(--bg);
+}
+.mod-week + .mod-week {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(128, 128, 128, 0.12);
+}
+.week-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: 6px;
+}
+.moderation .ico {
+  font-size: 20px;
+  line-height: 1.2;
+}
+.verdict {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--hint);
+}
+.verdict.counted {
+  background: rgba(46, 204, 113, 0.15);
+  color: var(--green);
+}
+.verdict.excluded {
+  background: rgba(231, 76, 60, 0.15);
+  color: var(--red);
 }
 label.field.check {
   display: flex;
