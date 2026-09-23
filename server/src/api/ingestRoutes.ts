@@ -2,11 +2,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { notifyNewMeasurement, saveMeasurements, type WeightMeasurement } from '../services/weight';
 import { findHubByToken, touchHub, type HubProvider } from '../services/integrations';
 import { ingestWorkouts } from '../services/fitness/ingest';
+import { deleteExternalWorkout, reconcileExternalWindow } from '../services/fitness/workouts';
 import { recordIngest, summarizeBody } from '../services/ingestLog';
 import type { ExternalWorkout } from '../services/fitness/workouts';
 import { parseHaePayload } from '../services/parsers/hae';
 import { parseHaeBody } from '../services/parsers/haeBody';
 import { parseHealthConnectPayload } from '../services/parsers/healthConnect';
+import { parseHubSyncDirectives } from '../services/parsers/hubSync';
 import { parseHealthConnectBody } from '../services/parsers/healthConnectBody';
 
 /**
@@ -81,6 +83,25 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
         `[${provider}] пользователь=${hub.userId} в запросе=${workouts.length} новых=${saved.created.length} обновлено=${saved.updated.length}`,
       );
 
+      // Хаб шлёт только то, что есть сейчас, и об удалении молчит. Если отправитель сказал
+      // о нём сам — адресным списком или ручательством за окно, — приводим своё состояние
+      // к состоянию источника: поправленная в приложении тренировка уже обновилась выше по
+      // externalId, а стёртая иначе висела бы у нас вечно
+      const directives = parseHubSyncDirectives(req.body);
+      let deleted = 0;
+      for (const externalId of directives.deleted) {
+        if (await deleteExternalWorkout(hub.userId, provider, externalId)) deleted += 1;
+      }
+      if (directives.window) {
+        deleted += await reconcileExternalWindow(
+          hub.userId,
+          provider,
+          directives.window,
+          workouts.map((w) => w.externalId),
+        );
+      }
+      if (deleted > 0) console.log(`[${provider}] пользователь=${hub.userId} удалено=${deleted}`);
+
       // Оба хаба в той же выгрузке присылают состав тела: вес, жир, мышцы и воду пишут туда
       // умные весы со своим приложением, отдельный приёмник для них не нужен
       let body = { received: 0, created: 0, updated: 0 };
@@ -109,6 +130,7 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
           workouts: workouts.length,
           workoutsCreated: saved.created.length,
           workoutsUpdated: saved.updated.length,
+          workoutsDeleted: deleted,
           measurements: body.received,
           measurementsCreated: body.created,
           measurementsUpdated: body.updated,
@@ -121,6 +143,7 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
         created: saved.created.length,
         updated: saved.updated.length,
         skippedDeleted: saved.skippedDeleted,
+        deleted,
         body,
       };
     });

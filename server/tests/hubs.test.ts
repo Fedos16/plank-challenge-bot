@@ -5,6 +5,7 @@ import { parseHealthConnectPayload } from '../src/services/parsers/healthConnect
 import { summarizeBody } from '../src/services/ingestLog';
 import { parseHaeBody } from '../src/services/parsers/haeBody';
 import { parseHealthConnectBody } from '../src/services/parsers/healthConnectBody';
+import { parseHubSyncDirectives } from '../src/services/parsers/hubSync';
 
 // ---------- Health Auto Export ----------
 
@@ -279,4 +280,28 @@ test('summarizeBody: у Health Connect видно длины массивов в
 test('summarizeBody: мусор вместо тела не роняет сводку', () => {
   assert.deepEqual(summarizeBody('hae', 'строка') as any, { shape: 'не объект' });
   assert.deepEqual(summarizeBody('hae', { nope: 1 }) as any, { shape: 'нет поля data' });
+});
+
+// ---------- Хабы: удаления и сверка окна ----------
+
+test('parseHubSyncDirectives: адресные удаления читаются и из data, и из корня', () => {
+  assert.deepEqual(parseHubSyncDirectives({ data: { workouts: [], deleted: ['a', 'b'] } }).deleted, ['a', 'b']);
+  assert.deepEqual(parseHubSyncDirectives({ exercise: [], deleted: ['c'] }).deleted, ['c']); // Health Connect кладёт в корень
+  assert.deepEqual(parseHubSyncDirectives({ data: { deleted: ['a', ' a ', '', 42] } }).deleted, ['a']); // дубли и мусор отсеиваются
+});
+
+test('parseHubSyncDirectives: окно только при явном корректном интервале', () => {
+  const w = parseHubSyncDirectives({ data: { window: { from: '2026-09-23T00:00:00Z', to: '2026-09-23T23:59:59Z' } } }).window;
+  assert.equal(w?.from.toISOString(), '2026-09-23T00:00:00.000Z');
+  assert.equal(w?.to.toISOString(), '2026-09-23T23:59:59.000Z');
+  // обычная выгрузка приложения окна не содержит — ничего не сносим
+  assert.equal(parseHubSyncDirectives(HAE_V2).window, null);
+  assert.equal(parseHubSyncDirectives({ data: { window: { from: '2026-09-23T10:00:00Z', to: '2026-09-23T09:00:00Z' } } }).window, null);
+  assert.equal(parseHubSyncDirectives({ data: { window: { from: 'вчера', to: 'сегодня' } } }).window, null);
+});
+
+test('parseHubSyncDirectives: мусор вместо тела не ломает разбор', () => {
+  assert.deepEqual(parseHubSyncDirectives(null), { deleted: [], window: null });
+  assert.deepEqual(parseHubSyncDirectives([]), { deleted: [], window: null });
+  assert.deepEqual(parseHubSyncDirectives({ data: { deleted: 'все' } }), { deleted: [], window: null });
 });

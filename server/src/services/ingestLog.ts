@@ -20,6 +20,7 @@ export interface IngestCounts {
   workouts?: number;
   workoutsCreated?: number;
   workoutsUpdated?: number;
+  workoutsDeleted?: number;
   measurements?: number;
   measurementsCreated?: number;
   measurementsUpdated?: number;
@@ -89,6 +90,7 @@ export async function recordIngest(input: {
         workouts: c.workouts ?? 0,
         workoutsCreated: c.workoutsCreated ?? 0,
         workoutsUpdated: c.workoutsUpdated ?? 0,
+        workoutsDeleted: c.workoutsDeleted ?? 0,
         measurements: c.measurements ?? 0,
         measurementsCreated: c.measurementsCreated ?? 0,
         measurementsUpdated: c.measurementsUpdated ?? 0,
