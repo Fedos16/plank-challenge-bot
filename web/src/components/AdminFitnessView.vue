@@ -31,6 +31,8 @@ import {
   formatNum,
   groupWorkoutsByWeek,
   hearts,
+  partsLabel,
+  sportTitle,
   toWorkoutRows,
   weekSummary,
   workoutMeta,
@@ -247,6 +249,20 @@ async function afterModeration(id: number, p: AdminFitnessParticipant, weekNumbe
   if (closed) await api.adminWeekAction(id, closed.id, 'recalc');
   moderated.value = (await api.adminParticipantWorkouts(id, p.participationId)).workouts;
   await reloadGame();
+}
+
+/** Какое занятие раскрыто на части: снять можно и одну часть, остальное останется в зачёте. */
+const openKey = ref<number | null>(null);
+
+/** Снять с зачёта одну часть занятия или вернуть её. */
+async function toggleWorkoutPart(p: AdminFitnessParticipant, w: Workout, weekNumber: number) {
+  const id = selectedId.value;
+  if (!id) return;
+  const exclude = w.verdict !== 'excluded';
+  await run(async () => {
+    await api.adminExcludeWorkout(id, w.id, exclude);
+    await afterModeration(id, p, weekNumber);
+  }, exclude ? 'Часть снята с зачёта' : 'Часть возвращена');
 }
 
 /** «Сегодня» в поясе челленджа — для дат «вчера», «пн, 21 сен», как в ленте и журнале. */
@@ -514,6 +530,18 @@ onMounted(async () => {
                   <div class="muted">
                     {{ formatDayHumanRu(challengeDay(w.startedAt, settings.timezone), modToday) }},
                     {{ formatTimeRu(w.startedAt) }} · {{ workoutMeta(w) }}
+                  </div>
+                  <button v-if="w.items.length > 1" class="parts-toggle" @click="openKey = openKey === w.key ? null : w.key">
+                    {{ partsLabel(w.items.length) }} {{ openKey === w.key ? '▴' : '▾' }}
+                  </button>
+                  <div v-if="openKey === w.key" class="parts">
+                    <div v-for="part in w.items" :key="part.id" class="part">
+                      <span class="grow">{{ SPORT_EMOJI[part.sport] ?? '💪' }} {{ sportTitle(part) }} · {{ part.durationMin }} мин</span>
+                      <span class="muted">{{ formatTimeRu(part.startedAt) }}</span>
+                      <button class="btn small secondary" @click="toggleWorkoutPart(p, part, g.weekNumber)">
+                        {{ part.verdict === 'excluded' ? 'Вернуть' : 'Отменить' }}
+                      </button>
+                    </div>
                   </div>
                   <div v-if="w.forceCounted" class="muted">Засчитана вручную</div>
                   <div v-if="w.verdict === 'duplicate'" class="muted">В зачёт идёт та же тренировка из другого источника</div>

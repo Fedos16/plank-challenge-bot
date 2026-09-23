@@ -277,6 +277,34 @@ label.field .lbl {
   margin-bottom: 4px;
   display: block;
 }
+/* части занятия: часы режут тренировку по видам, а удалить или снять можно и одну часть */
+.parts-toggle {
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--link);
+  cursor: pointer;
+}
+.parts {
+  margin: 4px 0 2px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(128, 128, 128, 0.2);
+}
+.part {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.part .grow {
+  flex: 1;
+  min-width: 0;
+}
+
 /* обязательное поле: без него форма не отправится */
 label.field .lbl.req::after {
   content: ' *';

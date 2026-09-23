@@ -183,6 +183,11 @@ export function toWorkoutRows(workouts: Workout[]): WorkoutRow[] {
   });
 }
 
+/** «2 части», «5 частей» — у ссылки, раскрывающей занятие. */
+export function partsLabel(n: number): string {
+  return `${n} ${n < 5 ? 'части' : 'частей'}`;
+}
+
 /** Подпись под названием: длительность, калории, дистанция, источник. */
 export function workoutMeta(r: Pick<WorkoutRow, 'durationMin' | 'kcal' | 'distanceM' | 'source'>): string {
   const parts = [`${r.durationMin} мин`];

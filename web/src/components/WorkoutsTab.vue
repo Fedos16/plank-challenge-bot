@@ -14,6 +14,8 @@ import {
   groupWorkoutsByWeek,
   newClientId,
   numOrNull,
+  partsLabel,
+  sportTitle,
   toWorkoutRows,
   weekSummary,
   workoutMeta,
@@ -114,14 +116,27 @@ async function add() {
   }
 }
 
+/** Какое занятие раскрыто на части: удалить можно и одну часть — например, ходьбу до зала. */
+const openKey = ref<number | null>(null);
+
 async function remove(r: WorkoutRow) {
   const n = r.items.length;
   const what = n > 1 ? `занятие «${r.title}» (${n} ${n < 5 ? 'записи' : 'записей'})` : `тренировку «${r.title}»`;
   if (!(await confirmAction(`Удалить ${what} от ${formatDateRu(challengeDay(r.startedAt))}?`))) return;
+  await deleteItems(r.items);
+}
+
+async function removePart(w: Workout) {
+  const what = `«${sportTitle(w)}» ${formatTimeRu(w.startedAt)}, ${w.durationMin} мин`;
+  if (!(await confirmAction(`Удалить из занятия только ${what}? Остальные части останутся.`))) return;
+  await deleteItems([w]);
+}
+
+async function deleteItems(items: Workout[]) {
   if (busy.value) return;
   busy.value = true;
   try {
-    for (const w of r.items) await api.deleteWorkout(w.id);
+    for (const w of items) await api.deleteWorkout(w.id);
     await load();
     emit('changed');
   } catch (e) {
@@ -189,6 +204,16 @@ onMounted(load);
           </div>
           <div class="muted">
             {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ workoutMeta(w) }}
+          </div>
+          <button v-if="w.items.length > 1" class="parts-toggle" @click="openKey = openKey === w.key ? null : w.key">
+            {{ partsLabel(w.items.length) }} {{ openKey === w.key ? '▴' : '▾' }}
+          </button>
+          <div v-if="openKey === w.key" class="parts">
+            <div v-for="p in w.items" :key="p.id" class="part">
+              <span class="grow">{{ SPORT_EMOJI[p.sport] ?? '💪' }} {{ sportTitle(p) }} · {{ p.durationMin }} мин</span>
+              <span class="muted">{{ formatTimeRu(p.startedAt) }}</span>
+              <button class="row-x" :disabled="busy" @click="removePart(p)">✕</button>
+            </div>
           </div>
           <div v-if="w.note" class="muted">{{ w.note }}</div>
           <div v-if="w.forceCounted" class="muted">
