@@ -197,15 +197,15 @@ export function countInWindow(
   workouts: WorkoutLike[],
   rules: CountingRules,
   window: Pick<DayWindow, 'start' | 'end'>,
-): { done: number; byDay: Map<DayStr, number> } {
+): { done: number; byDay: Map<DayStr, number>; counted: Session[] } {
   const { sessions } = classify(workouts, rules);
   const byDay = new Map<DayStr, number>();
-  let done = 0;
+  const counted: Session[] = [];
   for (const s of sessions) {
     if (s.verdict !== 'counted') continue;
     if (s.day < window.start || s.day > window.end) continue;
     byDay.set(s.day, (byDay.get(s.day) ?? 0) + 1);
-    done += 1;
+    counted.push(s);
   }
-  return { done, byDay };
+  return { done: counted.length, byDay, counted };
 }

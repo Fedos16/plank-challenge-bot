@@ -11,6 +11,7 @@ import type {
   DebtsOverview,
   FeedItem,
   FitnessLeaderboardRow,
+  WeekReport,
   FitnessOverview,
   FoodDay,
   FoodEntryInput,
@@ -146,6 +147,9 @@ export const api = {
     request<{ workouts: Workout[]; sports: string[] }>(`/challenges/${id}/fitness/workouts`),
   getFitnessLeaderboard: (id: number) =>
     request<{ rows: FitnessLeaderboardRow[]; feed: FeedItem[] }>(`/challenges/${id}/fitness/leaderboard`),
+  /** Без недели — текущая (у завершённого челленджа — последняя). */
+  getWeekReport: (id: number, week?: number) =>
+    request<WeekReport>(`/challenges/${id}/fitness/report${week ? `?week=${week}` : ''}`),
   addWorkout: (data: WorkoutInput) =>
     request<{ ok: boolean; id: number }>('/workouts', { method: 'POST', body: JSON.stringify(data) }),
   deleteWorkout: (id: number) => request<{ ok: boolean }>(`/workouts/${id}`, { method: 'DELETE' }),

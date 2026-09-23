@@ -710,3 +710,54 @@ export interface FoodProductInput {
   servingGrams?: number | null;
   servingLabel?: string | null;
 }
+
+/**
+ * passed — норма закрыта (в идущей неделе — уже набрана); failed — не закрыта; forgiven —
+ * не закрыта, но прощена; in_progress — неделя идёт, норма ещё не набрана; out — вне зачёта.
+ */
+export type ReportStatus = 'passed' | 'failed' | 'forgiven' | 'in_progress' | 'out';
+
+export interface WeekReportRow {
+  participationId: number;
+  name: string;
+  photoUrl: string | null;
+  isMe: boolean;
+  done: number;
+  required: number;
+  status: ReportStatus;
+  lifeLost: boolean;
+  eliminatedHere: boolean;
+  livesLeft: number;
+  livesTotal: number;
+  days: WeekDay[];
+  minutes: number;
+  kcal: number;
+  goalType: GoalType | null;
+  goal: GoalWeek | null;
+}
+
+/** Цель в отчёте: где человек сейчас и насколько сдвинулся за неделю. */
+export interface GoalWeek {
+  /** Пройдено пути от старта до цели, 0..100. */
+  percent: number | null;
+  /** Сдвиг за неделю в процентах пути; минус — отдалился от цели. */
+  deltaPercent: number | null;
+  /** Сдвиг в кг или % — только если человек открыл свои цифры. */
+  delta: number | null;
+  unit: MuscleUnit | null;
+}
+
+/** Отчёт недели фитнес-челленджа: по ссылке из чата его открывает любой. */
+export interface WeekReport {
+  challenge: { id: number; title: string; timezone: string };
+  week: {
+    number: number;
+    start: string;
+    end: string;
+    state: 'current' | 'ended' | 'closed';
+    daysLeft: number | null;
+  };
+  weeksAvailable: number;
+  rows: WeekReportRow[];
+  totals: { workouts: number; minutes: number; kcal: number; passed: number; inGame: number };
+}

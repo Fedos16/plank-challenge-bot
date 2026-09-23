@@ -1,6 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { config } from '../lib/config';
-import { miniAppLink } from '../lib/links';
+import { miniAppLink, weekReportParam } from '../lib/links';
 
 export function startKeyboard(): InlineKeyboard {
   const kb = new InlineKeyboard();
@@ -26,4 +26,14 @@ export function restoreKeyboard(submissionId: number): InlineKeyboard {
 /** Кнопка запуска Web App из группы (через Direct Link Mini App). */
 export function appLaunchKeyboard(botUsername: string): InlineKeyboard {
   return new InlineKeyboard().url('🏆 Открыть приложение', miniAppLink(botUsername));
+}
+
+/** Кнопки на отчёты недели фитнес-челленджей: открывают мини-приложение сразу на отчёте. */
+export function weekReportKeyboard(
+  botUsername: string,
+  reports: { challengeId: number; week: number; label: string }[],
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const r of reports) kb.url(r.label, miniAppLink(botUsername, weekReportParam(r.challengeId, r.week))).row();
+  return kb;
 }

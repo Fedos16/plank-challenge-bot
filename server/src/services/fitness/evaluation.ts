@@ -1,4 +1,4 @@
-import type { Challenge, Participation, User, WeekResult } from '@prisma/client';
+import type { Challenge, Participation, User, WeekResult, Workout } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { challengeDay, dateToDay, dayRange, dayToDate, todayDay, type DayStr } from '../../lib/time';
 import {
@@ -10,7 +10,7 @@ import {
   type DayWindow,
 } from '../../lib/weeks';
 import { challengeEndDay, challengeTimeline } from '../challenge';
-import { countInWindow } from './counting';
+import { countInWindow, type Session } from './counting';
 import { replayLives, weeksToForgiveForReinstate, type LivesState } from './lives';
 import { challengeInstants, loadWorkouts, rulesOf, windowInstants } from './workouts';
 
@@ -23,6 +23,9 @@ export interface WeekComputation {
   done: number;
   passed: boolean;
   byDay: Map<DayStr, number>;
+  /** Засчитанные занятия недели и записи, из которых они собраны: для минут и калорий отчёта. */
+  counted: Session[];
+  workouts: Workout[];
 }
 
 /** Итог недели участника по текущим данным. null — недели нет или участник вступил после неё. */
@@ -43,9 +46,9 @@ export async function computeWeek(
   // кто присоединился на следующий день.
   const { from, to } = windowInstants(week, ch.timezone);
   const workouts = await loadWorkouts(participation.userId, from, to);
-  const { done, byDay } = countInWindow(workouts, rulesOf(ch), week);
+  const { done, byDay, counted } = countInWindow(workouts, rulesOf(ch), week);
   const required = requiredFor(ch.weeklyWorkouts, window.days);
-  return { window, week, required, done, passed: done >= required, byDay };
+  return { window, week, required, done, passed: done >= required, byDay, counted, workouts };
 }
 
 export type CreatedWeekResult = WeekResult & { participation: Participation & { user: User } };

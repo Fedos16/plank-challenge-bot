@@ -1,12 +1,13 @@
+import type { Api } from 'grammy';
 import type { Challenge } from '@prisma/client';
+import { weekReportKeyboard } from '../../bot/keyboards';
 import { prisma } from '../../lib/prisma';
-import { dateToDay, dayjs, dayRange, dayToDate, todayDay } from '../../lib/time';
-import { weekCloseInstant, weekIndexOf, weekRange } from '../../lib/weeks';
-import { challengeEndDay, challengeTimeline } from '../challenge';
+import { dateToDay, dayToDate } from '../../lib/time';
+import { weekCloseInstant, weekRange } from '../../lib/weeks';
+import { challengeEndDay } from '../challenge';
 import { escapeHtml } from '../report';
-import { displayName } from '../users';
 import { livesOf, type CreatedWeekResult, type UpgradedWeek } from './evaluation';
-import { getFitnessLeaderboard } from './fitnessLeaderboard';
+import { getWeekReport, lastWeekIndex } from './weekReport';
 
 /** Старше этого итог недели — уже история: при догоне простоя о нём в ЛС не пишем. */
 const FRESH_MS = 7 * 86_400_000;
@@ -22,80 +23,71 @@ function isFresh(ch: Challenge, weekIndex: number, now: Date): boolean {
   return now.getTime() - weekCloseInstant(week, ch.weekCloseTime, ch.timezone).getTime() <= FRESH_MS;
 }
 
-/** Текст сводки недели для чата: кто закрыл норму, кто потерял жизнь, кто выбыл. */
-export async function buildWeekSummary(ch: Challenge, weekIndex: number): Promise<string> {
-  const rows = await prisma.weekResult.findMany({
-    where: { challengeId: ch.id, weekIndex },
-    include: { participation: { include: { user: true } } },
-  });
-
-  const lines: string[] = [`🏁 <b>${escapeHtml(ch.title)}: неделя ${weekIndex + 1} закрыта</b>`, ''];
-  for (const r of rows) {
-    const all = await prisma.weekResult.findMany({ where: { participationId: r.participationId } });
-    const lives = livesOf(ch, all);
-    const state = lives.weeks.find((w) => w.weekIndex === weekIndex);
-    const name = escapeHtml(displayName(r.participation.user));
-    const score = `${r.done}/${r.required}`;
-
-    if (state?.outOfGame) lines.push(`☠️ ${name} — ${score} · вне зачёта`);
-    else if (lives.eliminatedAtWeek === weekIndex) lines.push(`☠️ ${name} — ${score} · жизни закончились`);
-    else if (state?.lifeLost) lines.push(`💔 ${name} — ${score} · ${hearts(state.livesAfter, lives.total)}`);
-    else lines.push(`✅ ${name} — ${score} · ${hearts(state?.livesAfter ?? lives.left, lives.total)}`);
-  }
-  return lines.join('\n');
-}
+/** Бот grammY или его заглушка: нужны только API и имя для ссылки. */
+type BotLike = { api: Api; botInfo: { username: string } };
 
 /**
- * Как идёт текущая неделя — сводка по запросу, в любой момент. Порядок — как в рейтинге.
- * null — челлендж сейчас не идёт.
+ * Сообщение в чат про неделю: пара строк и кнопка на отчёт. Сам отчёт — экран мини-приложения,
+ * кнопка открывает его прямо в Telegram. null — недели нет (челлендж ещё не начался).
  */
-export async function buildWeekProgress(ch: Challenge): Promise<string | null> {
-  if (challengeTimeline(ch).phase !== 'running') return null;
-  const startDay = dateToDay(ch.startDate);
-  const today = todayDay(ch.timezone);
-  const weekIndex = weekIndexOf(startDay, today);
-  const week = weekRange(startDay, weekIndex, challengeEndDay(ch));
-  if (!week) return null;
+async function postWeekReport(bot: BotLike, ch: Challenge, weekNumber: number) {
+  const report = await getWeekReport(ch, 0, weekNumber);
+  if (typeof report === 'string') return null;
 
-  const daysLeft = dayRange(today, week.end).length;
-  const lines = [
-    `📊 <b>${escapeHtml(ch.title)}: неделя ${weekIndex + 1}</b>`,
-    `До конца недели ${daysLeft} дн., последний день — ${dayjs(week.end).format('DD.MM')}`,
-    '',
-  ];
-  for (const r of await getFitnessLeaderboard(ch, 0)) {
-    const name = escapeHtml(r.name);
-    const lives = hearts(r.livesLeft, r.livesTotal);
-    if (r.eliminated) lines.push(`☠️ ${name} — вне зачёта`);
-    else if (!r.week) lines.push(`⏳ ${name} · ${lives}`);
-    else {
-      const mark = r.week.done >= r.week.required ? '✅' : '⏳';
-      lines.push(`${mark} ${name} — ${r.week.done}/${r.week.required} · ${lives}`);
-    }
+  const { week, totals } = report;
+  const title = `<b>${escapeHtml(ch.title)}</b>`;
+  const passed = `${totals.passed} из ${totals.inGame}`;
+  const text =
+    week.state === 'current'
+      ? `📊 ${title}: неделя ${week.number}\nНорму уже закрыли ${passed}, до конца недели ${week.daysLeft} дн.`
+      : `🏁 ${title}: неделя ${week.number} закрыта\nНорму закрыли ${passed}.`;
+
+  let username: string | undefined;
+  try {
+    username = bot.botInfo.username;
+  } catch {
+    username = undefined; // бот ещё не инициализирован — без кнопки
   }
-  return lines.join('\n');
+  const keyboard = username
+    ? weekReportKeyboard(username, [{ challengeId: ch.id, week: week.number, label: '📊 Открыть отчёт' }])
+    : undefined;
+
+  const { sendToChallengeChat } = await import('../../bot/challengeChat');
+  const message = await sendToChallengeChat(bot.api, ch, text, { parse_mode: 'HTML', reply_markup: keyboard });
+  return { text, message };
+}
+
+/** Убирает прошлую промежуточную сводку: в топике остаётся одна актуальная ссылка. */
+async function dropInterimSummary(bot: BotLike, ch: Challenge): Promise<void> {
+  if (ch.summaryChatId === null || ch.summaryMessageId === null) return;
+  try {
+    await bot.api.deleteMessage(Number(ch.summaryChatId), ch.summaryMessageId);
+  } catch {
+    // старше 48 часов (Telegram не даёт удалить) или её уже удалили руками
+  }
+  await prisma.challenge.update({ where: { id: ch.id }, data: { summaryChatId: null, summaryMessageId: null } });
 }
 
 export type SendSummaryError = 'no_chat' | 'bot_disabled' | 'nothing_to_report';
 
 /**
- * Сводка в чат по кнопке админа: пока челлендж идёт — текущая неделя, после — итог последней
- * закрытой. В DailyReport не пишется: ручная отправка не должна отменять автоматическую.
+ * Сводка в чат по кнопке админа: пока челлендж идёт — текущая неделя, после — последняя.
+ * Прошлую промежуточную заменяет. В DailyReport не пишется: ручная отправка не должна
+ * отменять автоматическую при закрытии недели.
  */
 export async function sendWeekSummaryNow(ch: Challenge): Promise<{ error: SendSummaryError } | { content: string }> {
   if (!ch.chatId) return { error: 'no_chat' };
   const { bot } = await import('../../bot/bot');
   if (!bot) return { error: 'bot_disabled' };
 
-  let content = await buildWeekProgress(ch);
-  if (!content) {
-    const last = await prisma.weekResult.findFirst({ where: { challengeId: ch.id }, orderBy: { weekIndex: 'desc' } });
-    if (!last) return { error: 'nothing_to_report' };
-    content = await buildWeekSummary(ch, last.weekIndex);
-  }
-  const { sendToChallengeChat } = await import('../../bot/challengeChat');
-  await sendToChallengeChat(bot.api, ch, content, { parse_mode: 'HTML' });
-  return { content };
+  const sent = await postWeekReport(bot, ch, lastWeekIndex(ch) + 1);
+  if (!sent) return { error: 'nothing_to_report' };
+  await dropInterimSummary(bot, ch); // старую — только когда новая уже в чате
+  await prisma.challenge.update({
+    where: { id: ch.id },
+    data: { summaryChatId: BigInt(sent.message.chat.id), summaryMessageId: sent.message.message_id },
+  });
+  return { content: sent.text };
 }
 
 /** Хорошая новость в ЛС: опоздавшая синхронизация закрыла норму уже оценённой недели. */
@@ -123,9 +115,9 @@ export async function announceUpgrades(upgraded: UpgradedWeek[]): Promise<number
 }
 
 /**
- * Рассказывает об итогах только что закрытых недель: в ЛС — потерявшим жизнь, в чат — сводку.
- * Сводка идемпотентна через DailyReport (ключ — челлендж и последний день недели), ЛС — через
- * notifiedAt. Без бота (тесты, локальный запуск) молча ничего не шлёт.
+ * Рассказывает об итогах только что закрытых недель: в ЛС — потерявшим жизнь, в чат — ссылку
+ * на отчёт. Сообщение в чат идемпотентно через DailyReport (ключ — челлендж и последний день
+ * недели), ЛС — через notifiedAt. Без бота (тесты, локальный запуск) молча ничего не шлёт.
  */
 export async function announceWeekResults(
   ch: Challenge,
@@ -175,9 +167,10 @@ export async function announceWeekResults(
   const key = { challengeId_day: { challengeId: ch.id, day: dayToDate(week.end) } };
   if (await prisma.dailyReport.findUnique({ where: key })) return { dm, chat: false };
 
-  const content = await buildWeekSummary(ch, lastWeek);
-  const { sendToChallengeChat } = await import('../../bot/challengeChat');
-  await sendToChallengeChat(bot.api, ch, content, { parse_mode: 'HTML' });
-  await prisma.dailyReport.create({ data: { challengeId: ch.id, day: dayToDate(week.end), content } });
+  const sent = await postWeekReport(bot, ch, lastWeek + 1);
+  if (!sent) return { dm, chat: false };
+  // промежуточная сводка этой недели устарела: вместо неё теперь итог
+  await dropInterimSummary(bot, ch);
+  await prisma.dailyReport.create({ data: { challengeId: ch.id, day: dayToDate(week.end), content: sent.text } });
   return { dm, chat: true };
 }

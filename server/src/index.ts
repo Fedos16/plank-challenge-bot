@@ -17,6 +17,7 @@ async function setBotCommands(): Promise<void> {
     { command: 'app', description: 'Открыть приложение челленджа' },
     { command: 'sick', description: 'Сообщить о болезни на сегодня' },
     { command: 'rules', description: 'Правила челленджа' },
+    { command: 'week', description: 'Отчёт недели фитнес-челленджа' },
   ]);
   // Дополнительные команды для администраторов групп
   await bot.api.setMyCommands(
@@ -24,6 +25,7 @@ async function setBotCommands(): Promise<void> {
       { command: 'app', description: 'Открыть приложение челленджа' },
       { command: 'sick', description: 'Сообщить о болезни на сегодня' },
       { command: 'rules', description: 'Правила челленджа' },
+      { command: 'week', description: 'Отчёт недели фитнес-челленджа' },
       { command: 'bindchat', description: 'Привязать этот чат к челленджу' },
       { command: 'chatid', description: 'Показать ID этого чата' },
       { command: 'pinapp', description: 'Закрепить кнопку приложения' },

@@ -49,6 +49,9 @@ model Challenge {
   fakeFineMultiplier Int      @default(2)
   chatId             BigInt? // мониторимая группа
   chatThreadId       Int? // топик в группе с темами, куда бот пишет отчёты; пусто — общий чат
+  // последняя промежуточная сводка недели в чате: новая заменяет её, чтобы висела одна ссылка
+  summaryChatId      BigInt?
+  summaryMessageId   Int?
   freezeStreakOnSick Boolean  @default(true)
   freezeEveryDays    Int      @default(30) // сколько дней подряд даёт одну заморозку серии (0 = выключено)
   maxFreezes         Int      @default(3) // сколько заморозок можно держать на руках (0 = выключено)

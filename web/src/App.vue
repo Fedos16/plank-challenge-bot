@@ -7,6 +7,8 @@ import ChallengeView from './components/ChallengeView.vue';
 import PersonalChallengeView from './components/PersonalChallengeView.vue';
 import FitnessView from './components/FitnessView.vue';
 import AdminHome from './components/AdminHome.vue';
+import WeekReportView from './components/WeekReportView.vue';
+import { getStartParam } from './telegram';
 
 type Tab = 'challenges' | 'admin';
 
@@ -16,9 +18,9 @@ const personal = ref<PersonalSummary[]>([]);
 const available = ref<AvailableChallenge[]>([]);
 const userName = ref('');
 const isAdmin = ref(false);
-type Screen = 'group' | 'personal' | 'fitness';
+type Screen = 'group' | 'personal' | 'fitness' | 'report';
 
-const selected = ref<{ kind: Screen; id: number } | null>(null);
+const selected = ref<{ kind: Screen; id: number; week?: number } | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
@@ -85,7 +87,18 @@ function goChallenges() {
   void load();
 }
 
-onMounted(() => load(true));
+/** Отчёт недели по кнопке из чата: ссылка вида t.me/<бот>?startapp=week-<челлендж>-<неделя>. */
+function reportFromLink(): { id: number; week: number } | null {
+  const m = /^week-(\d+)-(\d+)$/.exec(getStartParam() ?? '');
+  return m ? { id: Number(m[1]), week: Number(m[2]) } : null;
+}
+
+onMounted(() => {
+  const report = reportFromLink();
+  if (report) selected.value = { kind: 'report', ...report };
+  // с отчётом не открываем единственный челлендж сами: человек пришёл смотреть отчёт
+  void load(!report);
+});
 </script>
 
 <template>
@@ -106,6 +119,12 @@ onMounted(() => load(true));
           :challenge-id="selected.id"
           @back="backToList"
           @deleted="backToList"
+        />
+        <WeekReportView
+          v-else-if="selected?.kind === 'report'"
+          :challenge-id="selected.id"
+          :week="selected.week"
+          @back="backToList"
         />
         <FitnessView
           v-else-if="selected?.kind === 'fitness'"

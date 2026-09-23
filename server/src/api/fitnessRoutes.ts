@@ -11,6 +11,8 @@ import {
 } from '../services/fitness/goals';
 import { getFitnessOverview } from '../services/fitness/overview';
 import { getFitnessFeed, getFitnessLeaderboard } from '../services/fitness/fitnessLeaderboard';
+import { getWeekReport } from '../services/fitness/weekReport';
+import { can, getChallengeById } from '../services/challenge';
 import {
   SPORTS,
   createManualWorkout,
@@ -46,6 +48,20 @@ export async function fitnessRoutes(app: FastifyInstance): Promise<void> {
     const r = await resolveWith('weeklyWorkouts', req, reply);
     if (!r) return;
     return { workouts: await listWorkouts(r.challenge, req.ctx!.user.id), sports: SPORTS };
+  });
+
+  // Отчёт недели. Ссылку на него бот кидает в общий чат, поэтому открыть его может любой, кто
+  // вошёл через Telegram, а не только участник: в отчёте нет ничего сверх прежней текстовой сводки
+  app.get('/challenges/:id/fitness/report', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === null) return;
+    const ch = await getChallengeById(id);
+    if (!ch || !can(ch, 'weeklyWorkouts')) return reply.code(404).send({ error: 'challenge_not_found' });
+    const raw = (req.query as { week?: string }).week;
+    const week = raw === undefined || raw === '' ? undefined : Number(raw);
+    const report = await getWeekReport(ch, req.ctx!.user.id, week);
+    if (typeof report === 'string') return reply.code(400).send({ error: report });
+    return report;
   });
 
   // Рейтинг и общая лента: тренировки друг друга видят все участники

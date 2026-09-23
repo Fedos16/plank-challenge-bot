@@ -187,7 +187,7 @@ async function evaluateNow() {
 
 async function sendWeekSummary() {
   const id = selectedId.value;
-  if (!id || !(await confirmAction('Отправить сводку текущей недели в чат челленджа?'))) return;
+  if (!id || !(await confirmAction('Отправить в чат челленджа ссылку на отчёт текущей недели?'))) return;
   await run(() => api.adminSendWeekSummary(id).then(() => undefined), 'Сводка отправлена');
 }
 
@@ -591,8 +591,9 @@ onMounted(async () => {
           </div>
           <button class="btn secondary" @click="evaluateNow">Подвести итоги сейчас</button>
           <div class="muted" style="margin: 14px 0 10px">
-            Сводку в чат можно отправить в любой момент: кто сколько сделал на текущей неделе и сколько
-            у кого жизней. После конца челленджа уйдёт итог последней недели.
+            В любой момент можно кинуть в чат ссылку на отчёт текущей недели: кто сколько сделал и
+            сколько у кого жизней. Отчёт открывается прямо в Telegram, прошлая такая ссылка из чата
+            удалится. После конца челленджа уйдёт отчёт последней недели.
           </div>
           <button class="btn secondary" :disabled="!settings.chatId" @click="sendWeekSummary">
             📣 Отправить сводку в чат

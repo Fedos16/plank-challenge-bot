@@ -1,6 +1,6 @@
 interface TelegramWebApp {
   initData: string;
-  initDataUnsafe: { user?: { id: number; first_name?: string; username?: string } };
+  initDataUnsafe: { user?: { id: number; first_name?: string; username?: string }; start_param?: string };
   colorScheme: 'light' | 'dark';
   themeParams: Record<string, string>;
   ready: () => void;
@@ -35,6 +35,17 @@ export function initTelegram(): void {
 
 export function getInitData(): string {
   return tg?.initData ?? '';
+}
+
+/**
+ * Параметр запуска из ссылки t.me/<бот>?startapp=… — по нему открывается нужный экран.
+ * Telegram кладёт его и в initData, и в адрес страницы; адрес заодно позволяет проверить
+ * экран в обычном браузере: ?tgWebAppStartParam=week-3-1.
+ */
+export function getStartParam(): string | null {
+  const fromTg = tg?.initDataUnsafe?.start_param;
+  if (fromTg) return fromTg;
+  return new URLSearchParams(window.location.search).get('tgWebAppStartParam');
 }
 
 export function haptic(type: 'success' | 'error' | 'warning' = 'success'): void {

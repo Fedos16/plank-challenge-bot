@@ -1,10 +1,12 @@
+import type { Challenge } from '@prisma/client';
 import type { Context } from 'grammy';
 import { bot } from './bot';
-import { appLaunchKeyboard, moderationKeyboard, restoreKeyboard, startKeyboard } from './keyboards';
+import { appLaunchKeyboard, moderationKeyboard, restoreKeyboard, startKeyboard, weekReportKeyboard } from './keyboards';
 import { config } from '../lib/config';
 import { prisma } from '../lib/prisma';
 import { dayjs, yesterdayDay } from '../lib/time';
-import { getActiveChallenge } from '../services/challenge';
+import { challengeTimeline, getActiveChallenge, listActiveChallengesByKind } from '../services/challenge';
+import { lastWeekIndex } from '../services/fitness/weekReport';
 import {
   displayName,
   getActiveParticipation,
@@ -224,6 +226,35 @@ export function registerHandlers(): void {
     } else {
       await ctx.reply(`Отчёт за ${day} сформирован, но чат не привязан (см. /bindchat).`);
     }
+  });
+
+  // /week — кнопка на отчёт текущей недели фитнес-челленджа. В группе — челленджей, которые
+  // пишут в этот чат; в личке — тех, где человек участвует (а не участнику — всех активных)
+  bot.command('week', async (ctx) => {
+    let challenges: Challenge[];
+    if (ctx.chat.type === 'private') {
+      const mine = await prisma.participation.findMany({
+        where: { status: 'active', user: { telegramId: BigInt(ctx.from?.id ?? 0) }, challenge: { kind: 'fitness', isActive: true } },
+        include: { challenge: true },
+      });
+      challenges = mine.length ? mine.map((p) => p.challenge) : await listActiveChallengesByKind('fitness');
+    } else {
+      challenges = await prisma.challenge.findMany({
+        where: { kind: 'fitness', isActive: true, chatId: BigInt(ctx.chat.id) },
+      });
+    }
+    const running = challenges.filter((ch) => challengeTimeline(ch).phase !== 'upcoming');
+    if (!running.length) {
+      await ctx.reply('Идущих фитнес-челленджей нет — отчёту пока не о чем рассказать.');
+      return;
+    }
+    const reports = running.map((ch) => {
+      const week = lastWeekIndex(ch) + 1;
+      return { challengeId: ch.id, week, label: running.length > 1 ? `📊 ${ch.title}` : `📊 Неделя ${week}` };
+    });
+    await ctx.reply(running.length > 1 ? 'Отчёты текущей недели 👇' : `Отчёт недели — «${running[0]!.title}» 👇`, {
+      reply_markup: weekReportKeyboard(ctx.me.username, reports),
+    });
   });
 
   // Кнопка «Заболел сегодня»
