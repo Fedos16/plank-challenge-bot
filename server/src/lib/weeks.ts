@@ -42,8 +42,9 @@ export function weekRange(startDay: DayStr, index: number, endDay: DayStr | null
 }
 
 /**
- * Пересечение недели с периодом участия: вступивший посреди недели отвечает только за
- * оставшиеся дни. Если пересечения нет (вступил после конца недели) — null.
+ * Пересечение недели с периодом участия: дни с момента вступления. Норму не уменьшает —
+ * нужно, чтобы пустые дни до вступления не считались пропуском. Если пересечения нет
+ * (вступил после конца недели) — null: эта неделя участника не касается.
  */
 export function clampWindow(week: DayWindow, fromDay: DayStr | null): DayWindow | null {
   if (!fromDay || diffDays(fromDay, week.start) >= 0) return week;

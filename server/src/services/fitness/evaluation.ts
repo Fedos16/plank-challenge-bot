@@ -15,7 +15,7 @@ import { replayLives, weeksToForgiveForReinstate, type LivesState } from './live
 import { challengeInstants, loadWorkouts, rulesOf, windowInstants } from './workouts';
 
 export interface WeekComputation {
-  /** Окно участника: вступивший посреди недели отвечает только за остаток. */
+  /** Окно участника: дни недели с момента вступления. На норму не влияет — только на полоску дней. */
   window: DayWindow;
   /** Полная неделя челленджа — для показа границ. */
   week: DayWindow;
@@ -39,15 +39,14 @@ export async function computeWeek(
   const window = clampWindow(week, challengeDay(participation.joinedAt, ch.timezone));
   if (!window) return null;
 
-  // Норма — по окну участия: вступивший посреди недели отвечает только за остаток.
-  // Зачёт — по всей неделе челленджа. Тренировка, сделанная до того, как человек нажал
-  // «вступить», настоящая, и терять её нельзя: данные с часов приходят за прошлые дни,
-  // а в приложение заходят позже. Иначе тренировка в день старта пропадала у всех,
-  // кто присоединился на следующий день.
+  // Норма и зачёт — по всей неделе челленджа, как у всех: позднее вступление не значит,
+  // что человек не тренировался. Тренировка, сделанная до того, как он нажал «вступить»,
+  // настоящая: данные с часов приходят за прошлые дни, а в приложение заходят позже.
+  // Меньше норма только на обрезанном хвосте челленджа.
   const { from, to } = windowInstants(week, ch.timezone);
   const workouts = await loadWorkouts(participation.userId, from, to);
   const { done, byDay, counted } = countInWindow(workouts, rulesOf(ch), week);
-  const required = requiredFor(ch.weeklyWorkouts, window.days);
+  const required = requiredFor(ch.weeklyWorkouts, week.days);
   return { window, week, required, done, passed: done >= required, byDay, counted, workouts };
 }
 
@@ -162,7 +161,7 @@ export interface WeekDayDTO {
   count: number;
   isToday: boolean;
   isFuture: boolean;
-  /** Внутри окна участия: за дни до вступления участник не отвечает. */
+  /** Внутри окна участия: пустой день до вступления на полоске приглушён, а не отмечен пропуском. */
   inWindow: boolean;
 }
 
