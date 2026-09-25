@@ -589,7 +589,7 @@ onMounted(async () => {
           <div v-if="moderating === p.participationId" class="moderation">
             <div v-for="g in moderatedWeeks" :key="g.weekNumber" class="mod-week">
               <div class="week-head">
-                <b>{{ g.weekNumber > 0 ? `Неделя ${g.weekNumber}` : 'До старта' }}</b>
+                <b>{{ g.weekNumber > 0 ? `Неделя ${g.weekNumber}` : 'Пробная неделя' }}</b>
                 <span class="muted">{{ g.summary }}</span>
               </div>
               <!-- занятие одной строкой, как в ленте: кнопки действуют на все его записи -->

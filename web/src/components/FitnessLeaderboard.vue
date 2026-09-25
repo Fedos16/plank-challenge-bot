@@ -56,13 +56,16 @@ const today = computed(() => todayInZone(props.overview.challenge.timezone));
 
 /** Неделя участника точками: закрашенные — сделано, пустые — осталось до нормы. */
 function weekDots(r: FitnessLeaderboardRow): boolean[] {
-  if (!r.week || r.eliminated) return [];
-  const total = Math.max(r.week.required, Math.min(r.week.done, 7));
-  return Array.from({ length: total }, (_, i) => i < r.week!.done);
+  // до старта точки показывают пробную неделю — так же, как потом текущую
+  const week = r.week ?? r.trial;
+  if (!week || r.eliminated) return [];
+  const total = Math.max(week.required, Math.min(week.done, 7));
+  return Array.from({ length: total }, (_, i) => i < week.done);
 }
 
 function weekLine(r: FitnessLeaderboardRow): string {
   if (r.eliminated) return `вне зачёта с недели ${r.eliminatedAtWeekNumber}`;
+  if (!r.week && r.trial) return `${r.trial.done} из ${r.trial.required} на пробной неделе`;
   const parts: string[] = [];
   if (r.week) parts.push(`${r.week.done} из ${r.week.required} на этой неделе`);
   parts.push(`всего ${r.totalCounted}`);
@@ -138,7 +141,7 @@ onMounted(load);
             {{ w.name }} · {{ w.session ? sessionTitle(w.session.parts) : sportTitle(w) }}
             <span v-if="w.verdict !== 'counted'" class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
             <!-- до старта недели не считаются: такая тренировка видна, но в зачёт не пошла -->
-            <span v-else-if="challengeDay(w.startedAt) < overview.challenge.startDate" class="verdict">до старта</span>
+            <span v-else-if="challengeDay(w.startedAt) < overview.challenge.startDate" class="verdict">пробная неделя</span>
           </div>
           <div class="muted">
             {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ feedMeta(w) }}

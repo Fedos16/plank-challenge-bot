@@ -77,6 +77,12 @@ const groups = computed(() => {
   const game = props.overview.game;
   // занятие — одна строка, как в ленте: часы режут тренировку по видам, а засчитывается она целиком
   return groupWorkoutsByWeek(toWorkoutRows(workouts.value), startDate, timezone).map((g) => {
+    // до старта — пробная неделя: своя полоска, но без итога
+    if (g.weekNumber === 0) {
+      const trial = game.trialWeek;
+      const summary = trial ? `${trial.done} из ${trial.required} · в зачёт не идёт` : null;
+      return { ...g, summary, days: trial?.days ?? null };
+    }
     const closed = game.history.find((h) => h.weekNumber === g.weekNumber);
     const current = game.currentWeek?.weekNumber === g.weekNumber ? game.currentWeek : null;
     // полоска недели; null — до старта или неделя без итога
@@ -190,7 +196,7 @@ onMounted(load);
     <div v-for="g in groups" :key="g.weekNumber" class="card">
       <div class="week-head">
         <div>
-          <h3>{{ g.weekNumber > 0 ? `Неделя ${g.weekNumber}` : 'До старта' }}</h3>
+          <h3>{{ g.weekNumber > 0 ? `Неделя ${g.weekNumber}` : 'Пробная неделя' }}</h3>
           <div v-if="g.summary" class="muted">{{ g.summary }}</div>
         </div>
         <WeekStrip v-if="g.days" :days="g.days" tone="card" size="sm" />

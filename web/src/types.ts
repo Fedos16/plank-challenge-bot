@@ -441,9 +441,14 @@ export interface WeekHistory {
   days: WeekDay[];
 }
 
+/** Пробная неделя перед стартом: считается как обычная, но в зачёт не идёт. */
+export type TrialWeek = Omit<CurrentWeek, 'weekNumber'>;
+
 export interface GameState {
   lives: LivesInfo;
   currentWeek: CurrentWeek | null;
+  /** null — пробной недели не было или участник вступил уже после неё. */
+  trialWeek: TrialWeek | null;
   history: WeekHistory[];
   totalCounted: number;
 }
@@ -516,6 +521,8 @@ export interface FitnessLeaderboardRow {
   eliminated: boolean;
   eliminatedAtWeekNumber: number | null;
   week: { done: number; required: number } | null;
+  /** Пробная неделя — только пока челлендж не начался. */
+  trial: { done: number; required: number } | null;
   normPercent: number | null;
   totalCounted: number;
   goalType: GoalType | null;

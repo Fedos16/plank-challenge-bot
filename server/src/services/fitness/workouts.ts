@@ -1,7 +1,7 @@
 import type { Challenge, Prisma, Workout } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { challengeDay, dateToDay, deadlineInstant, dayjs, type DayStr } from '../../lib/time';
-import type { DayWindow } from '../../lib/weeks';
+import { trialRange, type DayWindow } from '../../lib/weeks';
 import { challengeEndDay } from '../challenge';
 import { assignDuplicates, classify, type CountingRules, type Session, type Verdict } from './counting';
 
@@ -167,16 +167,19 @@ export function challengeInstants(ch: Challenge): { from: Date; to: Date } {
   return periodInstants(ch, dateToDay(ch.startDate));
 }
 
+/** Пробная неделя челленджа (см. trialRange): null — челлендж создан в день старта или позже. */
+export function challengeTrial(ch: Challenge): DayWindow | null {
+  return trialRange(dateToDay(ch.startDate), challengeDay(ch.createdAt, ch.timezone));
+}
+
 /**
- * Период журнала и ленты: весь челлендж, а у созданного заранее — с дня создания.
- * Тренировки до старта видны (в журнале — группой «До старта»), но в зачёт не идут:
- * недели считаются от даты старта. Так пробная неделя не пропадает из журнала после
- * переноса старта, а подключивший часы заранее видит, что данные доходят.
+ * Период журнала и ленты: весь челлендж вместе с пробной неделей. Её тренировки видны
+ * (в журнале — своей группой), но в зачёт не идут: недели считаются от даты старта. Так
+ * пробная неделя не пропадает после переноса старта, а подключивший часы заранее видит,
+ * что данные доходят.
  */
 export function journalInstants(ch: Challenge): { from: Date; to: Date } {
-  const startDay = dateToDay(ch.startDate);
-  const createdDay = challengeDay(ch.createdAt, ch.timezone);
-  return periodInstants(ch, createdDay < startDay ? createdDay : startDay);
+  return periodInstants(ch, challengeTrial(ch)?.start ?? dateToDay(ch.startDate));
 }
 
 function periodInstants(ch: Challenge, fromDay: DayStr): { from: Date; to: Date } {

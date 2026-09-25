@@ -4,10 +4,23 @@ import {
   clampWindow,
   closedWeekIndexes,
   requiredFor,
+  trialRange,
   weekCloseInstant,
   weekIndexOf,
   weekRange,
 } from '../src/lib/weeks';
+
+test('trialRange: неделя перед стартом, но не раньше создания челленджа', () => {
+  // как у «Storm Fat fight 3.0»: создан 21.09, старт перенесли на 28.09
+  assert.deepEqual(trialRange('2026-09-28', '2026-09-21'), { start: '2026-09-21', end: '2026-09-27', days: 7 });
+  // создан за месяц — пробная всё равно только последняя неделя
+  assert.deepEqual(trialRange('2026-09-28', '2026-08-28'), { start: '2026-09-21', end: '2026-09-27', days: 7 });
+  // создан за три дня — пробная короче
+  assert.deepEqual(trialRange('2026-09-28', '2026-09-25'), { start: '2026-09-25', end: '2026-09-27', days: 3 });
+  // создан в день старта или позже — пробной нет
+  assert.equal(trialRange('2026-09-28', '2026-09-28'), null);
+  assert.equal(trialRange('2026-09-28', '2026-10-02'), null);
+});
 
 const START = '2026-10-01'; // четверг: недели челленджа не совпадают с календарными
 const END_100 = '2027-01-08'; // день 100

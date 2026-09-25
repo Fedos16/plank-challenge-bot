@@ -12,7 +12,7 @@ import {
 import { challengeEndDay, challengeTimeline } from '../challenge';
 import { countInWindow, type Session } from './counting';
 import { replayLives, weeksToForgiveForReinstate, type LivesState } from './lives';
-import { challengeInstants, loadWorkouts, rulesOf, windowInstants } from './workouts';
+import { challengeInstants, challengeTrial, loadWorkouts, rulesOf, windowInstants } from './workouts';
 
 export interface WeekComputation {
   /** Окно участника: дни недели с момента вступления. На норму не влияет — только на полоску дней. */
@@ -192,9 +192,21 @@ export interface CurrentWeekDTO {
   days: WeekDayDTO[];
 }
 
+/** Пробная неделя перед стартом: считается как обычная, но в зачёт не идёт. */
+export interface TrialWeekDTO {
+  start: DayStr;
+  end: DayStr;
+  /** Норма для примера — какой она была бы у недели такой длины. */
+  required: number;
+  done: number;
+  days: WeekDayDTO[];
+}
+
 export interface GameStateDTO {
   lives: Pick<LivesState, 'total' | 'left' | 'eliminated'> & { eliminatedAtWeekNumber: number | null };
   currentWeek: CurrentWeekDTO | null;
+  /** null — пробной недели не было или участник вступил уже после неё. */
+  trialWeek: TrialWeekDTO | null;
   history: WeekHistoryDTO[];
   /** Засчитанных тренировок за весь челлендж: закрытые недели плюс текущая. */
   totalCounted: number;
@@ -231,6 +243,35 @@ async function currentWeekOf(ch: Challenge, participation: Participation): Promi
       isToday: day === today,
       isFuture: day > today,
       inWindow: day >= c.window.start && day <= c.window.end,
+    })),
+  };
+}
+
+/**
+ * Пробная неделя участника: те же правила зачёта, что у обычной, но без итога и жизней.
+ * Дни до вступления на полоске приглушены, как в обычной неделе.
+ */
+async function trialWeekOf(ch: Challenge, participation: Participation): Promise<TrialWeekDTO | null> {
+  const trial = challengeTrial(ch);
+  if (!trial) return null;
+  const window = clampWindow(trial, challengeDay(participation.joinedAt, ch.timezone));
+  if (!window) return null;
+
+  const today = todayDay(ch.timezone);
+  const { from, to } = windowInstants(trial, ch.timezone);
+  const workouts = await loadWorkouts(participation.userId, from, to);
+  const { done, byDay } = countInWindow(workouts, rulesOf(ch), trial);
+  return {
+    start: trial.start,
+    end: trial.end,
+    required: requiredFor(ch.weeklyWorkouts, trial.days),
+    done,
+    days: dayRange(trial.start, trial.end).map((day) => ({
+      day,
+      count: byDay.get(day) ?? 0,
+      isToday: day === today,
+      isFuture: day > today,
+      inWindow: day >= window.start && day <= window.end,
     })),
   };
 }
@@ -280,6 +321,7 @@ export async function getGameState(ch: Challenge, participation: Participation):
   const lifeByWeek = new Map(lives.weeks.map((w) => [w.weekIndex, w]));
   const daysByWeek = await historyDaysOf(ch, participation, results);
   const currentWeek = await currentWeekOf(ch, participation);
+  const trialWeek = await trialWeekOf(ch, participation);
 
   return {
     lives: {
@@ -289,6 +331,7 @@ export async function getGameState(ch: Challenge, participation: Participation):
       eliminatedAtWeekNumber: lives.eliminatedAtWeek === null ? null : lives.eliminatedAtWeek + 1,
     },
     currentWeek,
+    trialWeek,
     history: results
       .map((r) => ({
         id: r.id,

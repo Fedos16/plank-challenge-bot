@@ -42,6 +42,19 @@ export function weekRange(startDay: DayStr, index: number, endDay: DayStr | null
 }
 
 /**
+ * Пробная неделя — до семи дней перед стартом, но не раньше дня создания челленджа. Её
+ * тренировки видны на полоске и в журнале, а в зачёт не идут: итогов за неё не бывает.
+ * null — челлендж создан в день старта или позже, пробовать было некогда.
+ */
+export function trialRange(startDay: DayStr, createdDay: DayStr): DayWindow | null {
+  const end = addDays(startDay, -1);
+  if (diffDays(end, createdDay) > 0) return null;
+  const earliest = addDays(startDay, -WEEK_DAYS);
+  const start = diffDays(earliest, createdDay) > 0 ? createdDay : earliest;
+  return { start, end, days: diffDays(start, end) + 1 };
+}
+
+/**
  * Пересечение недели с периодом участия: дни с момента вступления. Норму не уменьшает —
  * нужно, чтобы пустые дни до вступления не считались пропуском. Если пересечения нет
  * (вступил после конца недели) — null: эта неделя участника не касается.

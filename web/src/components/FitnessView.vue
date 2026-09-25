@@ -136,6 +136,15 @@ const weekState = computed<'closed' | 'risk' | 'lost' | 'normal'>(() => {
   return left >= daysLeft ? 'risk' : 'normal';
 });
 
+/** Пробная неделя на обзоре — только пока челлендж не начался. */
+const trial = computed(() => (data.value?.challenge.phase === 'upcoming' ? data.value.game.trialWeek : null));
+
+const heroKicker = computed(() => {
+  const week = data.value?.game.currentWeek;
+  if (week) return `Неделя ${week.weekNumber}`;
+  return trial.value ? 'Пробная неделя' : 'Жизни';
+});
+
 /** Подпись под счётом недели: сколько осталось и сколько на это дней. Номер недели — в шапке блока. */
 const weekLabel = computed(() => {
   const week = data.value?.game.currentWeek;
@@ -243,7 +252,7 @@ watch(() => props.challengeId, load);
               {{ String(data.game.currentWeek.weekNumber).padStart(2, '0') }}
             </span>
             <div class="hero-top">
-              <span class="hero-kicker">{{ data.game.currentWeek ? `Неделя ${data.game.currentWeek.weekNumber}` : 'Жизни' }}</span>
+              <span class="hero-kicker">{{ heroKicker }}</span>
               <span class="hero-lives">{{ hearts(data.game.lives.left, data.game.lives.total) }}</span>
             </div>
             <template v-if="data.game.currentWeek">
@@ -253,13 +262,19 @@ watch(() => props.challengeId, load);
               <div class="lbl">{{ weekLabel }}</div>
               <WeekStrip :days="data.game.currentWeek.days" tone="hero" class="week-strip" />
             </template>
+            <!-- до старта: пробная неделя считается как обычная, только без итога и жизней -->
+            <template v-else-if="trial">
+              <div class="num">{{ trial.done }}<span class="of">из {{ trial.required }}</span></div>
+              <div class="lbl">в зачёт не идёт · старт {{ formatDateRu(data.challenge.startDate) }}</div>
+              <WeekStrip :days="trial.days" tone="hero" class="week-strip" />
+            </template>
             <div v-else class="lbl">
               {{ data.challenge.phase === 'upcoming' ? 'Челлендж ещё не начался' : 'Челлендж завершён' }}
             </div>
           </div>
 
           <button
-            v-if="data.game.currentWeek"
+            v-if="data.game.currentWeek || trial"
             class="btn"
             style="margin-bottom: 12px"
             @click="sub = 'workouts'"

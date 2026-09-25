@@ -1,6 +1,7 @@
 import type { Challenge, Workout } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { dayjs } from '../../lib/time';
+import { challengeTimeline } from '../challenge';
 import { displayName } from '../users';
 import { classify } from './counting';
 import { getGameState } from './evaluation';
@@ -25,6 +26,8 @@ export interface FitnessLeaderboardRow {
   eliminatedAtWeekNumber: number | null;
   /** Текущая неделя: сделано из нормы. null — челлендж не идёт. */
   week: { done: number; required: number } | null;
+  /** Пробная неделя — только пока челлендж не начался: после старта в списке важна текущая. */
+  trial: { done: number; required: number } | null;
   /** Выполнение нормы по закрытым неделям, 0..100. Перевыполнение недели не компенсирует провал другой. */
   normPercent: number | null;
   totalCounted: number;
@@ -46,6 +49,7 @@ export async function getFitnessLeaderboard(ch: Challenge, meId: number): Promis
     include: { user: true, goal: true },
   });
 
+  const upcoming = challengeTimeline(ch).phase === 'upcoming';
   const rows: FitnessLeaderboardRow[] = [];
   for (const p of participations) {
     const game = await getGameState(ch, p);
@@ -70,6 +74,8 @@ export async function getFitnessLeaderboard(ch: Challenge, meId: number): Promis
       eliminated: game.lives.eliminated,
       eliminatedAtWeekNumber: game.lives.eliminatedAtWeekNumber,
       week: game.currentWeek ? { done: game.currentWeek.done, required: game.currentWeek.required } : null,
+      trial:
+        upcoming && game.trialWeek ? { done: game.trialWeek.done, required: game.trialWeek.required } : null,
       normPercent: required > 0 ? Math.round((met / required) * 100) : null,
       totalCounted: game.totalCounted,
       goalType: (p.goal?.goalType as GoalType | undefined) ?? null,
