@@ -569,6 +569,8 @@ export interface AdminChallengeRow extends ChallengeTimeline {
 }
 
 export interface AdminFitnessChallenge extends ChallengeTimeline, FitnessSettings {
+  /** Можно нажать «Старт»: ни одна неделя ещё не подведена. */
+  canStart: boolean;
   id: number;
   key: string;
   kind: string;
@@ -582,6 +584,20 @@ export interface AdminFitnessChallenge extends ChallengeTimeline, FitnessSetting
   chatId: string | null;
   /** Топик в группе с темами; null — общий чат. */
   chatThreadId: number | null;
+}
+
+/** Что сделал «Старт» с целью участника. */
+export interface AdminStartedParticipant {
+  name: string;
+  status: 'updated' | 'no_goal' | 'no_entries' | 'target_reached';
+  changes: { metric: 'weightKg' | 'bodyFat' | 'muscle'; before: number | null; after: number }[];
+}
+
+export interface AdminStartResult {
+  startDate: string;
+  endDate: string | null;
+  participants: AdminStartedParticipant[];
+  challenge: AdminFitnessChallenge;
 }
 
 export type AdminFitnessInput = Partial<

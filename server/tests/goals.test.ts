@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ParticipantGoal, WeightEntry } from '@prisma/client';
-import { currentMetric, goalProgress, progressFor } from '../src/services/fitness/goals';
+import { currentMetric, goalProgress, goalStartsFrom, progressFor } from '../src/services/fitness/goals';
 import { muscleKgOf, musclePctOf } from '../src/services/weight';
 
 test('goalProgress: похудение — движение вниз', () => {
@@ -128,4 +128,39 @@ test('progressFor: без замеров по показателю «сейча�
   const p = progressFor(goal, entries);
   assert.equal(p.current, 24);
   assert.equal(p.percent, 0);
+});
+
+const startGoal = {
+  goalType: 'lose_fat',
+  targetValue: 20,
+  muscleUnit: 'percent',
+  startWeightKg: 83.5,
+  startBodyFat: 24.7,
+  startMuscle: null,
+};
+
+test('goalStartsFrom: старт — среднее по замерам пробной недели, как «текущее значение»', () => {
+  const entries = [
+    entry('2026-09-21T06:00:00Z', 83.5, 24.7),
+    entry('2026-09-23T06:00:00Z', 82.4, 24.5),
+    entry('2026-09-24T06:00:00Z', 82.0, 24.3),
+    entry('2026-09-25T06:00:00Z', 82.2, 24.4),
+  ];
+  assert.deepEqual(goalStartsFrom(startGoal, entries), [
+    { metric: 'weightKg', field: 'startWeightKg', before: 83.5, after: 82.2 },
+    { metric: 'bodyFat', field: 'startBodyFat', before: 24.7, after: 24.4 },
+  ]);
+});
+
+test('goalStartsFrom: без замеров старт не трогаем', () => {
+  assert.deepEqual(goalStartsFrom(startGoal, []), []);
+});
+
+test('goalStartsFrom: цель, достигнутая от нового старта, не пересчитывается', () => {
+  // сушился до 20%, а за пробную неделю весы показали 19.8 — прогресс сломался бы
+  const entries = [entry('2026-09-25T06:00:00Z', 80, 19.8)];
+  assert.equal(goalStartsFrom(startGoal, entries), null);
+  // у набора мышц направление обратное
+  const gain = { ...startGoal, goalType: 'gain_muscle', targetValue: 40, startMuscle: 38 };
+  assert.equal(goalStartsFrom(gain, [{ measuredAt: at('2026-09-25T06:00:00Z'), weightKg: 80, bodyFat: null, muscle: 41 }]), null);
 });

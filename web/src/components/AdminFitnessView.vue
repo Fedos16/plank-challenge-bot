@@ -5,6 +5,8 @@ import type {
   AdminChallengeRow,
   AdminFitnessChallenge,
   AdminFitnessParticipant,
+  AdminStartedParticipant,
+  AdminStartResult,
   AdminWeekRow,
   IngestSync,
   Workout,
@@ -88,6 +90,7 @@ async function select(id: number) {
   section.value = 'settings';
   moderating.value = null;
   weeks.value = [];
+  startResult.value = null;
   const [s, p] = await Promise.all([api.adminGetFitness(id), api.adminFitnessParticipants(id)]);
   settings.value = s;
   duration.value = s.durationDays === null ? '' : String(s.durationDays);
@@ -139,6 +142,46 @@ async function save() {
     });
     await loadList();
   });
+}
+
+// ---- Старт ----
+const starting = ref(false);
+const startResult = ref<AdminStartResult | null>(null);
+
+async function startNow() {
+  const s = settings.value;
+  if (!s || starting.value) return;
+  const question =
+    'Начать челлендж сегодня? Всё до сегодняшнего дня станет пробным периодом, стартовые замеры в целях пересчитаются.';
+  if (!(await confirmAction(question))) return;
+  starting.value = true;
+  try {
+    const res = await api.adminStartFitness(s.id);
+    settings.value = res.challenge;
+    duration.value = res.challenge.durationDays === null ? '' : String(res.challenge.durationDays);
+    startResult.value = res;
+    await loadList();
+    showToast('Челлендж стартовал');
+  } catch (e) {
+    showToast(errorText(e), false);
+  } finally {
+    starting.value = false;
+  }
+}
+
+const START_METRIC: Record<AdminStartedParticipant['changes'][number]['metric'], string> = {
+  weightKg: 'вес',
+  bodyFat: 'жир',
+  muscle: 'мышцы',
+};
+
+function startLine(p: AdminStartedParticipant): string {
+  if (p.status === 'no_goal') return 'цели ещё нет';
+  if (p.status === 'no_entries') return 'замеров до старта нет, старт прежний';
+  if (p.status === 'target_reached') return 'от нового старта цель уже достигнута — старт прежний, цель надо поправить';
+  const moved = p.changes.filter((c) => c.before !== c.after);
+  if (!moved.length) return 'старт не изменился';
+  return moved.map((c) => `${START_METRIC[c.metric]} ${c.before ?? '—'} → ${c.after}`).join(', ');
 }
 
 async function setStatus(p: AdminFitnessParticipant, status: 'active' | 'left') {
@@ -412,6 +455,25 @@ onMounted(async () => {
         <button :class="{ active: section === 'weeks' }" @click="openSection('weeks')">Недели</button>
       </div>
 
+      <div v-if="section === 'settings' && (settings.canStart || startResult)" class="card">
+        <h3>🏁 Старт</h3>
+        <div class="muted" style="margin-bottom: 10px">
+          Нажмите в день старта. Челлендж начнётся сегодня, {{ formatDateRu(todayInZone(settings.timezone)) }}, а всё,
+          что было раньше, станет пробным периодом: тренировки останутся в журнале без зачёта, итогов и потери
+          жизней за него не будет. Дата окончания не изменится<template v-if="settings.endDate">
+            — {{ formatDateRu(settings.endDate) }}</template>. Стартовые замеры в целях пересчитаются: среднее по
+          взвешиваниям до сегодняшнего дня.
+        </div>
+        <button v-if="settings.canStart" class="btn" :disabled="starting" @click="startNow">
+          {{ starting ? 'Запускаем…' : '🏁 Старт' }}
+        </button>
+        <div v-if="startResult" style="margin-top: 12px">
+          <div v-for="p in startResult.participants" :key="p.name" class="start-row">
+            <b>{{ p.name }}</b> <span class="muted">· {{ startLine(p) }}</span>
+          </div>
+        </div>
+      </div>
+
       <div v-if="section === 'settings'" class="card">
         <h3>Настройки</h3>
         <label class="field"><span class="lbl">Название</span><input v-model="settings.title" /></label>
@@ -635,6 +697,10 @@ onMounted(async () => {
 <style scoped>
 .pick {
   cursor: pointer;
+}
+.start-row {
+  padding: 4px 0;
+  font-size: 14px;
 }
 .pick.current .name {
   color: var(--link);

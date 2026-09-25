@@ -19,6 +19,7 @@ import {
   unforgiveWeek,
 } from '../services/fitness/evaluation';
 import { announceWeekResults, sendWeekSummaryNow } from '../services/fitness/fitnessReport';
+import { startFitnessChallenge } from '../services/fitness/start';
 import { listWorkouts, setWorkoutExcluded, setWorkoutForceCounted } from '../services/fitness/workouts';
 import { listIngests } from '../services/ingestLog';
 
@@ -245,6 +246,16 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
     return { ok: true };
   });
 
+  // «Старт»: челлендж начинается сегодня, всё до этого — пробный период (см. startFitnessChallenge)
+  app.post('/:id/start', async (req, reply) => {
+    const ch = await requireFitness((req.params as { id: string }).id, reply);
+    if (!ch) return;
+    const res = await startFitnessChallenge(ch);
+    if (typeof res === 'string') return reply.code(400).send({ error: res });
+    const updated = await prisma.challenge.findUniqueOrThrow({ where: { id: ch.id } });
+    return { ...res, challenge: await serialize(updated) };
+  });
+
   // Подвести итоги сейчас, не дожидаясь планировщика. asOf — только вне прода: «как будто сейчас
   // такая-то дата», чтобы проверить закрытие недели, не ожидая её конца.
   app.post('/:id/evaluate', async (req, reply) => {
@@ -389,8 +400,11 @@ function parseSettings(body: Record<string, unknown>): SettingsPatch | SettingsE
   return data;
 }
 
-function serialize(ch: Challenge) {
+async function serialize(ch: Challenge) {
+  // «Старт» доступен, пока не подведено ни одной недели: потом сдвиг старта переписал бы итоги
+  const closedWeeks = await prisma.weekResult.count({ where: { challengeId: ch.id } });
   return {
+    canStart: closedWeeks === 0 && challengeTimeline(ch).phase !== 'finished',
     id: ch.id,
     key: ch.key,
     kind: ch.kind,

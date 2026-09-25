@@ -5,6 +5,7 @@ import type {
   AdminFitnessChallenge,
   AdminFitnessInput,
   AdminFitnessParticipant,
+  AdminStartResult,
   AdminWeekRow,
   BodyProfile,
   ChallengePublic,
@@ -209,6 +210,8 @@ export const api = {
       `/admin/challenges/${id}/evaluate`,
       { method: 'POST' },
     ),
+  adminStartFitness: (id: number) =>
+    request<AdminStartResult>(`/admin/challenges/${id}/start`, { method: 'POST' }),
   adminSendWeekSummary: (id: number) =>
     request<{ ok: boolean }>(`/admin/challenges/${id}/week-summary`, { method: 'POST' }),
 

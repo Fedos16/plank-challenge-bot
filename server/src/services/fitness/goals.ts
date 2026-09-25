@@ -100,6 +100,42 @@ export function currentMetric(
   return Math.round((sum / sample.length) * 10) / 10;
 }
 
+export interface GoalStartChange {
+  metric: Metric;
+  field: (typeof START_FIELD)[Metric];
+  before: number | null;
+  after: number;
+}
+
+/**
+ * Стартовые значения цели по замерам до старта — тем же способом, что и текущее значение:
+ * одиночное взвешивание при вступлении шумит, а среднее за пробную неделю — нет. Показатели
+ * без замеров не трогаем. null — от нового старта цель уже достигнута или смотрит не в ту
+ * сторону: прогресс сломался бы, такую цель участник поправит сам.
+ */
+export function goalStartsFrom(
+  goal: Pick<
+    ParticipantGoal,
+    'goalType' | 'targetValue' | 'muscleUnit' | 'startWeightKg' | 'startBodyFat' | 'startMuscle'
+  >,
+  entries: Pick<WeightEntry, 'measuredAt' | Metric>[],
+): GoalStartChange[] | null {
+  const changes: GoalStartChange[] = [];
+  for (const metric of ['weightKg', 'bodyFat', 'muscle'] as const) {
+    const after = currentMetric(entries, metric, metric === 'muscle' ? muscleUnitOf(goal) : 'percent');
+    const field = START_FIELD[metric];
+    if (after !== null) changes.push({ metric, field, before: goal[field], after });
+  }
+
+  const tracked = GOAL_METRIC[goal.goalType as GoalType];
+  const start = changes.find((c) => c.metric === tracked)?.after;
+  if (start !== undefined && goal.targetValue !== null) {
+    const up = goal.goalType === 'gain_muscle';
+    if (up ? goal.targetValue <= start : goal.targetValue >= start) return null;
+  }
+  return changes;
+}
+
 // ---------- анкета ----------
 
 export interface BodyProfileDTO {
