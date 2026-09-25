@@ -1,4 +1,4 @@
-import type { Challenge, Participation, Prisma, Workout } from '@prisma/client';
+import type { Challenge, Prisma, Workout } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { challengeDay, dateToDay, deadlineInstant, dayjs, type DayStr } from '../../lib/time';
 import type { DayWindow } from '../../lib/weeks';
@@ -164,30 +164,29 @@ export function sessionToWorkoutDTO(items: Workout[], session: Session): Workout
 
 /** Период челленджа как моменты: от старта до конца (у бессрочного — до «сейчас плюс сутки»). */
 export function challengeInstants(ch: Challenge): { from: Date; to: Date } {
-  return journalInstants(ch, null);
+  return periodInstants(ch, dateToDay(ch.startDate));
 }
 
 /**
- * Период журнала и ленты участника: весь челлендж, а у вступившего до старта — со дня
- * вступления. Тренировки до старта видны (в журнале — группой «До старта»), но в зачёт
- * не идут: недели считаются от даты старта. Так пробная неделя перед переносом старта
- * не пропадает из журнала, а при подключении часов заранее видно, что данные доходят.
+ * Период журнала и ленты: весь челлендж, а у созданного заранее — с дня создания.
+ * Тренировки до старта видны (в журнале — группой «До старта»), но в зачёт не идут:
+ * недели считаются от даты старта. Так пробная неделя не пропадает из журнала после
+ * переноса старта, а подключивший часы заранее видит, что данные доходят.
  */
-export function journalInstants(ch: Challenge, joinedAt: Date | null): { from: Date; to: Date } {
+export function journalInstants(ch: Challenge): { from: Date; to: Date } {
   const startDay = dateToDay(ch.startDate);
-  const joinedDay = joinedAt ? challengeDay(joinedAt, ch.timezone) : startDay;
-  const start = joinedDay < startDay ? joinedDay : startDay;
+  const createdDay = challengeDay(ch.createdAt, ch.timezone);
+  return periodInstants(ch, createdDay < startDay ? createdDay : startDay);
+}
+
+function periodInstants(ch: Challenge, fromDay: DayStr): { from: Date; to: Date } {
   const end: DayStr = challengeEndDay(ch) ?? dayjs().add(1, 'day').format('YYYY-MM-DD');
-  return windowInstants({ start, end }, ch.timezone);
+  return windowInstants({ start: fromDay, end }, ch.timezone);
 }
 
 /** Журнал тренировок участника за время челленджа, от новых к старым, с вердиктами. */
-export async function listWorkouts(
-  ch: Challenge,
-  participation: Pick<Participation, 'userId' | 'joinedAt'>,
-): Promise<WorkoutDTO[]> {
-  const { userId } = participation;
-  const { from, to } = journalInstants(ch, participation.joinedAt);
+export async function listWorkouts(ch: Challenge, userId: number): Promise<WorkoutDTO[]> {
+  const { from, to } = journalInstants(ch);
   const workouts = await loadWorkouts(userId, from, to);
   const rules = rulesOf(ch);
   const { verdicts, sessions } = classify(workouts, rules);

@@ -47,7 +47,7 @@ export async function fitnessRoutes(app: FastifyInstance): Promise<void> {
   app.get('/challenges/:id/fitness/workouts', async (req, reply) => {
     const r = await resolveWith('weeklyWorkouts', req, reply);
     if (!r) return;
-    return { workouts: await listWorkouts(r.challenge, r.participation), sports: SPORTS };
+    return { workouts: await listWorkouts(r.challenge, req.ctx!.user.id), sports: SPORTS };
   });
 
   // Отчёт недели. Ссылку на него бот кидает в общий чат, поэтому открыть его может любой, кто
