@@ -137,6 +137,8 @@ onMounted(load);
           <div class="name">
             {{ w.name }} · {{ w.session ? sessionTitle(w.session.parts) : sportTitle(w) }}
             <span v-if="w.verdict !== 'counted'" class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
+            <!-- до старта недели не считаются: такая тренировка видна, но в зачёт не пошла -->
+            <span v-else-if="challengeDay(w.startedAt) < overview.challenge.startDate" class="verdict">до старта</span>
           </div>
           <div class="muted">
             {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ feedMeta(w) }}

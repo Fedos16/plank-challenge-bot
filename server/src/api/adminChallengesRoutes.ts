@@ -203,7 +203,7 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
     if (pid === null) return;
     const p = await prisma.participation.findFirst({ where: { id: pid, challengeId: ch.id } });
     if (!p) return reply.code(404).send({ error: 'participant_not_found' });
-    return { workouts: await listWorkouts(ch, p.userId) };
+    return { workouts: await listWorkouts(ch, p) };
   });
 
   // Последние выгрузки с телефона участника: что приёмник получил и что из этого сохранил

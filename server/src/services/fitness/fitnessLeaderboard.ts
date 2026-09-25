@@ -6,7 +6,7 @@ import { classify } from './counting';
 import { getGameState } from './evaluation';
 import { progressFor, type GoalType } from './goals';
 import {
-  challengeInstants,
+  journalInstants,
   loadWorkouts,
   rulesOf,
   sessionToWorkoutDTO,
@@ -94,12 +94,13 @@ export async function getFitnessFeed(ch: Challenge, meId: number): Promise<FeedI
     where: { challengeId: ch.id, status: 'active' },
     include: { user: true },
   });
-  const period = challengeInstants(ch);
   const since = dayjs().subtract(FEED_DAYS, 'day').toDate();
-  const from = since > period.from ? since : period.from;
 
   const items: FeedItem[] = [];
   for (const p of participations) {
+    // как в журнале: у вступившего до старта видны и тренировки до старта
+    const period = journalInstants(ch, p.joinedAt);
+    const from = since > period.from ? since : period.from;
     const workouts = await loadWorkouts(p.userId, from, period.to);
     const { verdicts, sessions } = classify(workouts, rulesOf(ch));
     const byId = new Map(workouts.map((w) => [w.id, w]));

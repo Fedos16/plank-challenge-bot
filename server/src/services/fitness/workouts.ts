@@ -1,6 +1,6 @@
-import type { Challenge, Prisma, Workout } from '@prisma/client';
+import type { Challenge, Participation, Prisma, Workout } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
-import { dateToDay, deadlineInstant, dayjs, type DayStr } from '../../lib/time';
+import { challengeDay, dateToDay, deadlineInstant, dayjs, type DayStr } from '../../lib/time';
 import type { DayWindow } from '../../lib/weeks';
 import { challengeEndDay } from '../challenge';
 import { assignDuplicates, classify, type CountingRules, type Session, type Verdict } from './counting';
@@ -164,14 +164,30 @@ export function sessionToWorkoutDTO(items: Workout[], session: Session): Workout
 
 /** Период челленджа как моменты: от старта до конца (у бессрочного — до «сейчас плюс сутки»). */
 export function challengeInstants(ch: Challenge): { from: Date; to: Date } {
-  const start = dateToDay(ch.startDate);
+  return journalInstants(ch, null);
+}
+
+/**
+ * Период журнала и ленты участника: весь челлендж, а у вступившего до старта — со дня
+ * вступления. Тренировки до старта видны (в журнале — группой «До старта»), но в зачёт
+ * не идут: недели считаются от даты старта. Так пробная неделя перед переносом старта
+ * не пропадает из журнала, а при подключении часов заранее видно, что данные доходят.
+ */
+export function journalInstants(ch: Challenge, joinedAt: Date | null): { from: Date; to: Date } {
+  const startDay = dateToDay(ch.startDate);
+  const joinedDay = joinedAt ? challengeDay(joinedAt, ch.timezone) : startDay;
+  const start = joinedDay < startDay ? joinedDay : startDay;
   const end: DayStr = challengeEndDay(ch) ?? dayjs().add(1, 'day').format('YYYY-MM-DD');
   return windowInstants({ start, end }, ch.timezone);
 }
 
 /** Журнал тренировок участника за время челленджа, от новых к старым, с вердиктами. */
-export async function listWorkouts(ch: Challenge, userId: number): Promise<WorkoutDTO[]> {
-  const { from, to } = challengeInstants(ch);
+export async function listWorkouts(
+  ch: Challenge,
+  participation: Pick<Participation, 'userId' | 'joinedAt'>,
+): Promise<WorkoutDTO[]> {
+  const { userId } = participation;
+  const { from, to } = journalInstants(ch, participation.joinedAt);
   const workouts = await loadWorkouts(userId, from, to);
   const rules = rulesOf(ch);
   const { verdicts, sessions } = classify(workouts, rules);

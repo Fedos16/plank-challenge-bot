@@ -200,7 +200,10 @@ onMounted(load);
         <div class="grow">
           <div class="title">
             {{ w.title }}
-            <span class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
+            <!-- до старта в зачёт ничего не идёт: «в зачёте» там неправда, а причины незачёта оставляем -->
+            <span v-if="g.weekNumber > 0 || w.verdict !== 'counted'" class="verdict" :class="w.verdict">
+              {{ VERDICT_LABEL[w.verdict] }}
+            </span>
           </div>
           <div class="muted">
             {{ formatDayHumanRu(challengeDay(w.startedAt), today) }}, {{ formatTimeRu(w.startedAt) }} · {{ workoutMeta(w) }}
