@@ -41,8 +41,9 @@ const HUBS: Record<HubProvider, HubGuide> = {
       'Automations → New Automation → тип REST API.',
       'URL — адрес ниже. В Headers добавьте Authorization со значением ниже.',
       'Data Type — Workouts, Export Format — JSON, версия экспорта — v2. Маршрут и подробные метрики лучше выключить: выгрузка будет легче.',
-      'Чтобы приходил вес, добавьте туда же Health Metrics и отметьте Weight & Body Mass, Body Fat Percentage и Lean Body Mass.',
       'Включите автоматизацию и нажмите Manual Export — первая выгрузка подтянет историю.',
+      'Чтобы приходил вес, создайте вторую автоматизацию REST API — одна выгружает только один тип данных. Адрес и Authorization те же, Data Type — Health Metrics, Export Format — JSON, v2.',
+      'В её списке метрик отметьте только Weight & Body Mass, Body Fat Percentage и Lean Body Mass: со всеми галочками выгрузка весит десятки мегабайт. Включите её и тоже нажмите Manual Export.',
     ],
   },
   health_connect: {
