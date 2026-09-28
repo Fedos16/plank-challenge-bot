@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue';
 import { api } from '../api';
 import type { ChallengePublic, LeaderboardRow } from '../types';
 import { formatDateRu, formatMoney } from '../helpers';
+import { openUserProfile } from '../nav';
 
 const props = defineProps<{ challengeId: number; challenge: ChallengePublic }>();
 
@@ -47,7 +48,12 @@ watch(() => props.challengeId, load);
       <div v-if="loading" class="muted">Загрузка…</div>
       <div v-else-if="rows.length === 0" class="muted">Пока нет участников.</div>
       <div v-else>
-        <div v-for="(r, i) in rows" :key="r.participationId" class="row">
+        <div
+          v-for="(r, i) in rows"
+          :key="r.participationId"
+          class="row person"
+          @click="openUserProfile(r.userId)"
+        >
           <div class="rank">{{ medals[i] ?? i + 1 }}</div>
           <div class="name">
             {{ r.name }}
@@ -59,3 +65,9 @@ watch(() => props.challengeId, load);
     </div>
   </div>
 </template>
+
+<style scoped>
+.person {
+  cursor: pointer;
+}
+</style>

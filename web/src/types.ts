@@ -144,6 +144,7 @@ export interface FreezeOverview {
 
 export interface LeaderboardRow {
   participationId: number;
+  userId: number;
   name: string;
   username: string | null;
   photoUrl: string | null;
@@ -513,6 +514,7 @@ export interface IngestSync {
 
 export interface FitnessLeaderboardRow {
   participationId: number;
+  userId: number;
   name: string;
   photoUrl: string | null;
   isMe: boolean;
@@ -530,6 +532,7 @@ export interface FitnessLeaderboardRow {
 }
 
 export interface FeedItem extends Workout {
+  userId: number;
   name: string;
   isMe: boolean;
 }
@@ -804,4 +807,31 @@ export interface WeekReport {
     withGoal: number;
     avgDeltaPercent: number | null;
   };
+}
+
+/** Челлендж в профиле человека: у планки — серии, у фитнеса — неделя, жизни и % к цели. */
+export interface ProfileChallenge {
+  id: number;
+  kind: string;
+  title: string;
+  dayNumber: number;
+  joinedAt: string;
+  plank?: { todayState: DayState; currentStreak: number; maxStreak: number; doneCount: number };
+  fitness?: FitnessSummary;
+}
+
+export interface UserProfile {
+  user: { id: number; name: string; username: string | null; photoUrl: string | null; memberSince: string };
+  isMe: boolean;
+  /** Только в своём профиле. */
+  nameSettings: { customName: string | null; telegramName: string } | null;
+  stats: {
+    challenges: number;
+    bestStreak: number;
+    /** null — тренировки этому зрителю не показываются. */
+    workouts: { count: number; minutes: number } | null;
+  };
+  challenges: ProfileChallenge[];
+  /** Личные челленджи — только в своём профиле. */
+  personal: PersonalSummary[] | null;
 }

@@ -8,9 +8,11 @@ import PersonalChallengeView from './components/PersonalChallengeView.vue';
 import FitnessView from './components/FitnessView.vue';
 import AdminHome from './components/AdminHome.vue';
 import WeekReportView from './components/WeekReportView.vue';
+import UserProfileView from './components/UserProfileView.vue';
+import { closeUserProfile, viewedUserId } from './nav';
 import { getStartParam } from './telegram';
 
-type Tab = 'challenges' | 'admin';
+type Tab = 'challenges' | 'profile' | 'admin';
 
 const tab = ref<Tab>('challenges');
 const group = ref<MyChallenge[]>([]);
@@ -82,9 +84,23 @@ async function joinChallenge(id: number) {
   }
 }
 function goChallenges() {
+  closeUserProfile();
   tab.value = 'challenges';
   selected.value = null;
   void load();
+}
+function goTab(next: Tab) {
+  closeUserProfile();
+  tab.value = next;
+}
+/** Из своего профиля — сразу в челлендж, на экран его типа. */
+function openChallengeFromProfile(id: number, kind: string) {
+  goTab('challenges');
+  openGroup(id, kind);
+}
+function openPersonalFromProfile(id: number) {
+  goTab('challenges');
+  selected.value = { kind: 'personal', id };
 }
 
 /** Отчёт недели по кнопке из чата: ссылка вида t.me/<бот>?startapp=week-<челлендж>-<неделя>. */
@@ -111,8 +127,26 @@ onMounted(() => {
   </div>
 
   <template v-else>
-    <div class="app">
+    <!-- Чужой профиль — поверх экрана: тот остаётся смонтированным, «Назад» вернёт на место -->
+    <div v-if="viewedUserId !== null" class="app">
+      <UserProfileView
+        :user-id="viewedUserId"
+        :can-go-back="true"
+        @back="closeUserProfile"
+        @open-challenge="openChallengeFromProfile"
+        @open-personal="openPersonalFromProfile"
+        @renamed="(name: string) => (userName = name)"
+      />
+    </div>
+    <div v-show="viewedUserId === null" class="app">
       <AdminHome v-if="tab === 'admin' && isAdmin" />
+      <UserProfileView
+        v-else-if="tab === 'profile'"
+        user-id="me"
+        @open-challenge="openChallengeFromProfile"
+        @open-personal="openPersonalFromProfile"
+        @renamed="(name: string) => (userName = name)"
+      />
       <template v-else>
         <PersonalChallengeView
           v-if="selected?.kind === 'personal'"
@@ -154,10 +188,13 @@ onMounted(() => {
     </div>
 
     <nav class="tabbar">
-      <button :class="{ active: tab === 'challenges' }" @click="goChallenges">
+      <button :class="{ active: tab === 'challenges' && viewedUserId === null }" @click="goChallenges">
         <span class="ico">🏆</span>Челленджи
       </button>
-      <button v-if="isAdmin" :class="{ active: tab === 'admin' }" @click="tab = 'admin'">
+      <button :class="{ active: tab === 'profile' && viewedUserId === null }" @click="goTab('profile')">
+        <span class="ico">👤</span>Профиль
+      </button>
+      <button v-if="isAdmin" :class="{ active: tab === 'admin' && viewedUserId === null }" @click="goTab('admin')">
         <span class="ico">⚙️</span>Админ
       </button>
     </nav>

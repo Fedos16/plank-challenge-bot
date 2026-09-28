@@ -16,6 +16,7 @@ import {
   sessionTitle,
   sportTitle,
 } from '../fitness';
+import { openUserProfile } from '../nav';
 
 /**
  * Часть «Обзора»: как дела у каждого участника и общая лента. Это не рейтинг — у всех свои
@@ -97,7 +98,7 @@ onMounted(load);
     <div v-else-if="error" class="error-text">{{ error }}</div>
     <template v-else>
       <div v-for="{ row: r, participant: p } in people" :key="r.participationId" class="person" :class="{ out: r.eliminated, me: r.isMe }">
-        <div class="person-head">
+        <div class="person-head" @click="openUserProfile(r.userId)">
           <img v-if="r.photoUrl" :src="r.photoUrl" class="pic" alt="" />
           <div v-else class="pic">{{ initials(r.name) }}</div>
           <span class="name">{{ r.name }}</span>
@@ -138,7 +139,7 @@ onMounted(load);
         <div class="ico">{{ SPORT_EMOJI[w.sport] ?? '💪' }}</div>
         <div class="grow">
           <div class="name">
-            {{ w.name }} · {{ w.session ? sessionTitle(w.session.parts) : sportTitle(w) }}
+            <span class="author" @click="openUserProfile(w.userId)">{{ w.name }}</span> · {{ w.session ? sessionTitle(w.session.parts) : sportTitle(w) }}
             <span v-if="w.verdict !== 'counted'" class="verdict" :class="w.verdict">{{ VERDICT_LABEL[w.verdict] }}</span>
             <!-- до старта недели не считаются: такая тренировка видна, но в зачёт не пошла -->
             <span v-else-if="challengeDay(w.startedAt) < overview.challenge.startDate" class="verdict">пробная неделя</span>
@@ -175,6 +176,7 @@ onMounted(load);
   border-left: 3px solid var(--accent);
 }
 .person-head {
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -288,5 +290,8 @@ onMounted(load);
 }
 .feed-item .name {
   white-space: normal;
+}
+.author {
+  cursor: pointer;
 }
 </style>

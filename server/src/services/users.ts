@@ -47,7 +47,15 @@ export function userFromWebApp(tgUser: TelegramWebAppUser): UpsertInput {
   };
 }
 
-export function displayName(user: Pick<User, 'firstName' | 'lastName' | 'username'>): string {
+export function displayName(
+  user: Pick<User, 'firstName' | 'lastName' | 'username'> & { customName?: string | null },
+): string {
+  if (user.customName) return user.customName;
+  return telegramName(user);
+}
+
+/** Имя из Telegram — без учёта заданного в профиле. */
+export function telegramName(user: Pick<User, 'firstName' | 'lastName' | 'username'>): string {
   const parts = [user.firstName, user.lastName].filter(Boolean);
   if (parts.length) return parts.join(' ');
   if (user.username) return `@${user.username}`;
@@ -111,4 +119,24 @@ export async function getParticipationByTelegramId(
   });
   if (!participation || participation.status !== 'active') return null;
   return { ...participation, user };
+}
+
+/** Максимальная длина своего имени: длинное ломает строки рейтинга и отчёта. */
+export const CUSTOM_NAME_MAX = 40;
+
+/**
+ * Задать своё отображаемое имя. Пустая строка возвращает имя из Telegram.
+ * Невидимые и управляющие символы вырезаются, пробелы схлопываются.
+ */
+export function normalizeCustomName(raw: string): string | null {
+  const name = raw
+    .replace(/(?!\u200d)[\p{Cc}\p{Cf}]/gu, '') // склейку эмодзи (ZWJ) не трогаем
+    .replace(/\s+/g, ' ')
+    .trim();
+  // по символам, а не UTF-16: иначе обрезка может разорвать эмодзи пополам
+  return name ? Array.from(name).slice(0, CUSTOM_NAME_MAX).join('').trim() : null;
+}
+
+export async function setCustomName(userId: number, raw: string): Promise<User> {
+  return prisma.user.update({ where: { id: userId }, data: { customName: normalizeCustomName(raw) } });
 }

@@ -5,6 +5,7 @@ import { displayName } from './users';
 
 export interface LeaderboardRow {
   participationId: number;
+  userId: number;
   name: string;
   username: string | null;
   photoUrl: string | null;
@@ -27,6 +28,7 @@ export async function getLeaderboard(challenge: Challenge): Promise<LeaderboardR
     });
     rows.push({
       participationId: p.id,
+      userId: p.userId,
       name: displayName(p.user),
       username: p.user.username,
       photoUrl: p.user.photoUrl,

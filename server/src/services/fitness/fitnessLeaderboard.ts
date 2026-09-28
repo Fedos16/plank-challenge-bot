@@ -17,6 +17,7 @@ import {
 
 export interface FitnessLeaderboardRow {
   participationId: number;
+  userId: number;
   name: string;
   photoUrl: string | null;
   isMe: boolean;
@@ -66,6 +67,7 @@ export async function getFitnessLeaderboard(ch: Challenge, meId: number): Promis
 
     rows.push({
       participationId: p.id,
+      userId: p.userId,
       name: displayName(p.user),
       photoUrl: p.user.photoUrl,
       isMe: p.userId === meId,
@@ -86,6 +88,7 @@ export async function getFitnessLeaderboard(ch: Challenge, meId: number): Promis
 }
 
 export interface FeedItem extends WorkoutDTO {
+  userId: number;
   name: string;
   isMe: boolean;
 }
@@ -113,7 +116,7 @@ export async function getFitnessFeed(ch: Challenge, meId: number): Promise<FeedI
     const isMe = p.userId === meId;
     const name = displayName(p.user);
     // заметка личная: мало ли что человек записал для себя
-    const withAuthor = (dto: WorkoutDTO): FeedItem => ({ ...dto, note: isMe ? dto.note : null, name, isMe });
+    const withAuthor = (dto: WorkoutDTO): FeedItem => ({ ...dto, note: isMe ? dto.note : null, userId: p.userId, name, isMe });
 
     // Занятие — одна строка, даже если источник разрезал его по видам активности
     for (const session of sessions) {

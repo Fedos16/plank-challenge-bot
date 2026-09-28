@@ -36,6 +36,7 @@ import type {
   PersonalSummary,
   Profile,
   Quote,
+  UserProfile,
   RecentDaysResponse,
   SickResult,
   WeightOverview,
@@ -91,6 +92,12 @@ export const api = {
   // --- пользовательские (мультичеллендж) ---
   getMyChallenges: () => request<MyChallengesResponse>('/my/challenges'),
   getChallenge: (id: number) => request<ChallengePublic>(`/challenges/${id}`),
+  getUserProfile: (userId: number | 'me') => request<UserProfile>(`/users/${userId}/profile`),
+  setMyName: (name: string) =>
+    request<{ ok: true; name: string; customName: string | null }>('/users/me/name', {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
   getMe: (id: number) => request<Profile>(`/challenges/${id}/me`),
   getLeaderboard: (id: number) => request<{ rows: LeaderboardRow[] }>(`/challenges/${id}/leaderboard`),
   reportSick: (id: number) => request<SickResult>(`/challenges/${id}/sick`, { method: 'POST' }),

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Challenge } from '@prisma/client';
 import { authPreHandler } from './auth';
-import { resolveParticipant, resolveWith } from './resolve';
+import { parseId, resolveParticipant, resolveWith } from './resolve';
 import { getBank } from '../services/bank';
 import { getProfile } from '../services/profile';
 import {
@@ -26,7 +26,14 @@ import {
   getChallengeById,
   listJoinableChallenges,
 } from '../services/challenge';
-import { displayName, ensureParticipation, leaveChallenge } from '../services/users';
+import {
+  CUSTOM_NAME_MAX,
+  displayName,
+  ensureParticipation,
+  leaveChallenge,
+  setCustomName,
+} from '../services/users';
+import { getUserProfile } from '../services/userProfile';
 import { reportSick } from '../services/sick';
 import { getFreezeOverview, useFreeze } from '../services/freezes';
 import { challengeDayNumber, dateToDay, todayDay } from '../lib/time';
@@ -87,6 +94,27 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         description: c.description,
       })),
     };
+  });
+
+  // Профиль человека: свой (/users/me/profile) или того, с кем вы в одном челлендже
+  app.get('/users/:id/profile', async (req, reply) => {
+    const raw = (req.params as { id: string }).id;
+    const me = req.ctx!.user;
+    const id = raw === 'me' ? me.id : parseId(raw, reply);
+    if (id === null) return;
+    const profile = await getUserProfile(me, id);
+    if (!profile) return reply.code(404).send({ error: 'user_not_found' });
+    return profile;
+  });
+
+  // Своё отображаемое имя; пустое — вернуть имя из Telegram
+  app.put('/users/me/name', async (req, reply) => {
+    const name = (req.body as { name?: unknown } | null)?.name;
+    if (typeof name !== 'string' || name.length > CUSTOM_NAME_MAX * 4) {
+      return reply.code(400).send({ error: 'bad_name' });
+    }
+    const user = await setCustomName(req.ctx!.user.id, name);
+    return { ok: true, name: displayName(user), customName: user.customName };
   });
 
   // Вступить в челлендж: участие всегда явное — ни /start, ни вход в приложение
