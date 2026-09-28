@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { api } from '../api';
-import type { FitnessOverview, WeekHistory } from '../types';
+import type { FitnessOverview } from '../types';
 import { confirmAction, haptic } from '../telegram';
 import { daysBetweenISO, formatDateRu, todayInZone } from '../helpers';
-import { GOAL_EMOJI, GOAL_LABEL, UNIT_LABEL, errorText, formatNum, hearts } from '../fitness';
+import { GOAL_EMOJI, GOAL_LABEL, UNIT_LABEL, errorText, formatNum, hearts, weekMark, weekMeta } from '../fitness';
 import GoalOnboarding from './GoalOnboarding.vue';
 import BodyTab from './BodyTab.vue';
 import WorkoutsTab from './WorkoutsTab.vue';
@@ -104,22 +104,6 @@ const goalDelta = computed<{ text: string; tone: 'good' | 'bad' | 'flat' } | nul
 });
 
 /** Значок итога недели. */
-function weekMark(w: WeekHistory): string {
-  if (w.outOfGame) return '☠️';
-  if (w.status === 'passed') return '✅';
-  if (w.status === 'forgiven') return '🤝';
-  return '💔';
-}
-
-/** Подпись под номером недели: счёт и что с жизнью. */
-function weekMeta(w: WeekHistory): string {
-  const score = `${w.done} из ${w.required}`;
-  if (w.outOfGame) return `${score} · вне зачёта`;
-  if (w.status === 'forgiven') return `${score} · прощена`;
-  if (w.lifeLost) return `${score} · −1 жизнь`;
-  return score;
-}
-
 /**
  * Состояние текущей недели для цвета блока: closed — норма набрана, risk — дней осталось
  * не больше, чем недостающих тренировок (пропускать уже нельзя), lost — норма не набирается

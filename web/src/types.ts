@@ -835,3 +835,17 @@ export interface UserProfile {
   /** Личные челленджи — только в своём профиле. */
   personal: PersonalSummary[] | null;
 }
+
+/** История человека в одном челлендже — для профиля. */
+export type ProfileHistory =
+  | { kind: 'plank'; days: { day: string; state: DayState }[] }
+  | {
+      kind: 'fitness';
+      currentWeek: CurrentWeek | null;
+      trialWeek: TrialWeek | null;
+      /** Закрытые недели, от свежих к старым. */
+      weeks: WeekHistory[];
+      /** Последние тренировки — как в ленте группы. */
+      workouts: Workout[];
+    }
+  | { kind: 'other' };

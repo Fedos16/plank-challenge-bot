@@ -35,6 +35,7 @@ import type {
   PersonalDetail,
   PersonalSummary,
   Profile,
+  ProfileHistory,
   Quote,
   UserProfile,
   RecentDaysResponse,
@@ -93,6 +94,8 @@ export const api = {
   getMyChallenges: () => request<MyChallengesResponse>('/my/challenges'),
   getChallenge: (id: number) => request<ChallengePublic>(`/challenges/${id}`),
   getUserProfile: (userId: number | 'me') => request<UserProfile>(`/users/${userId}/profile`),
+  getProfileHistory: (userId: number | 'me', challengeId: number) =>
+    request<ProfileHistory>(`/users/${userId}/challenges/${challengeId}/history`),
   setMyName: (name: string) =>
     request<{ ok: true; name: string; customName: string | null }>('/users/me/name', {
       method: 'PUT',

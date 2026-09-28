@@ -7,6 +7,7 @@ import type {
   MeasurementKind,
   MuscleUnit,
   Verdict,
+  WeekHistory,
   WeekStatus,
   Workout,
 } from './types';
@@ -346,4 +347,21 @@ export function numOrNull(v: string | number | null | undefined): number | null 
   if (v === null || v === undefined || v === '') return null;
   const n = Number(String(v).replace(',', '.'));
   return Number.isFinite(n) ? n : null;
+}
+
+/** Значок закрытой недели: зачтена, прощена, провалена или участник уже выбыл. */
+export function weekMark(w: WeekHistory): string {
+  if (w.outOfGame) return '☠️';
+  if (w.status === 'passed') return '✅';
+  if (w.status === 'forgiven') return '🤝';
+  return '💔';
+}
+
+/** Подпись под номером недели: счёт и что с жизнью. */
+export function weekMeta(w: WeekHistory): string {
+  const score = `${w.done} из ${w.required}`;
+  if (w.outOfGame) return `${score} · вне зачёта`;
+  if (w.status === 'forgiven') return `${score} · прощена`;
+  if (w.lifeLost) return `${score} · −1 жизнь`;
+  return score;
 }

@@ -33,7 +33,7 @@ import {
   leaveChallenge,
   setCustomName,
 } from '../services/users';
-import { getUserProfile } from '../services/userProfile';
+import { getProfileHistory, getUserProfile } from '../services/userProfile';
 import { reportSick } from '../services/sick';
 import { getFreezeOverview, useFreeze } from '../services/freezes';
 import { challengeDayNumber, dateToDay, todayDay } from '../lib/time';
@@ -105,6 +105,19 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const profile = await getUserProfile(me, id);
     if (!profile) return reply.code(404).send({ error: 'user_not_found' });
     return profile;
+  });
+
+  // История человека в одном челлендже: дни планки или недели и тренировки фитнеса
+  app.get('/users/:id/challenges/:challengeId/history', async (req, reply) => {
+    const params = req.params as { id: string; challengeId: string };
+    const me = req.ctx!.user;
+    const id = params.id === 'me' ? me.id : parseId(params.id, reply);
+    if (id === null) return;
+    const challengeId = parseId(params.challengeId, reply);
+    if (challengeId === null) return;
+    const history = await getProfileHistory(me, id, challengeId);
+    if (!history) return reply.code(404).send({ error: 'history_not_found' });
+    return history;
   });
 
   // Своё отображаемое имя; пустое — вернуть имя из Telegram

@@ -5,6 +5,7 @@ import type { ProfileChallenge, UserProfile } from '../types';
 import { STATE_LABEL, initials } from '../helpers';
 import { hearts } from '../fitness';
 import { haptic } from '../telegram';
+import ProfileHistory from './ProfileHistory.vue';
 
 /**
  * Профиль человека: свой — вкладкой «Профиль», чужой — по тапу на участника в рейтинге или
@@ -23,6 +24,13 @@ const profile = ref<UserProfile | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
+/** Чей челлендж раскрыт с историей. Единственный раскрывается сразу — выбирать не из чего. */
+const expanded = ref<number | null>(null);
+
+function toggle(id: number) {
+  expanded.value = expanded.value === id ? null : id;
+}
+
 const editing = ref(false);
 const nameInput = ref('');
 const saving = ref(false);
@@ -33,6 +41,8 @@ async function load() {
   error.value = null;
   try {
     profile.value = await api.getUserProfile(props.userId);
+    const only = profile.value.challenges.length === 1 ? profile.value.challenges[0] : null;
+    expanded.value = only ? only.id : null;
   } catch (e) {
     profile.value = null;
     error.value =
@@ -181,30 +191,32 @@ watch(() => props.userId, load);
       <div class="card">
         <h3>{{ profile.isMe ? 'Мои челленджи' : 'Общие челленджи' }}</h3>
         <div v-if="!profile.challenges.length" class="muted">Пока ни в одном челлендже.</div>
-        <div
-          v-for="c in profile.challenges"
-          :key="c.id"
-          class="row"
-          :class="{ tappable: profile.isMe }"
-          @click="profile.isMe && $emit('open-challenge', c.id, c.kind)"
-        >
-          <div class="name">
-            {{ c.kind === 'fitness' ? '🏋️ ' : '' }}{{ c.title }}
-            <div v-if="c.plank" class="meta">
-              сделано: {{ c.plank.doneCount }} · рекорд: {{ c.plank.maxStreak }} ·
-              сегодня: {{ STATE_LABEL[c.plank.todayState].toLowerCase() }}
+        <template v-for="c in profile.challenges" :key="c.id">
+          <div class="row tappable" :class="{ open: expanded === c.id }" @click="toggle(c.id)">
+            <div class="name">
+              {{ c.kind === 'fitness' ? '🏋️ ' : '' }}{{ c.title }}
+              <div v-if="c.plank" class="meta">
+                сделано: {{ c.plank.doneCount }} · рекорд: {{ c.plank.maxStreak }} ·
+                сегодня: {{ STATE_LABEL[c.plank.todayState].toLowerCase() }}
+              </div>
+              <div v-else-if="c.fitness" class="meta">
+                {{ fitnessLine(c) }}
+                <template v-if="typeof c.fitness.progressPercent === 'number'">
+                  · 🎯 {{ c.fitness.progressPercent }}%
+                </template>
+              </div>
             </div>
-            <div v-else-if="c.fitness" class="meta">
-              {{ fitnessLine(c) }}
-              <template v-if="typeof c.fitness.progressPercent === 'number'">
-                · 🎯 {{ c.fitness.progressPercent }}%
-              </template>
-            </div>
+            <div v-if="c.plank" class="fire">🔥 {{ c.plank.currentStreak }}</div>
+            <div v-else-if="c.fitness" class="lives">{{ hearts(c.fitness.livesLeft, c.fitness.livesTotal) }}</div>
+            <span class="chev">›</span>
           </div>
-          <div v-if="c.plank" class="fire">🔥 {{ c.plank.currentStreak }}</div>
-          <div v-else-if="c.fitness" class="lives">{{ hearts(c.fitness.livesLeft, c.fitness.livesTotal) }}</div>
-          <span v-if="profile.isMe" class="chev">›</span>
-        </div>
+          <div v-if="expanded === c.id" class="expanded">
+            <ProfileHistory :user-id="profile.isMe ? 'me' : profile.user.id" :challenge-id="c.id" />
+            <button v-if="profile.isMe" class="link-btn" @click="$emit('open-challenge', c.id, c.kind)">
+              Открыть челлендж ›
+            </button>
+          </div>
+        </template>
       </div>
 
       <!-- Личные — только в своём профиле -->
@@ -319,6 +331,21 @@ watch(() => props.userId, load);
 .chev {
   font-size: 22px;
   color: var(--hint);
+  transition: transform 0.15s ease;
+}
+/* раскрытый челлендж: стрелка вниз, история под строкой */
+.row.open {
+  border-bottom: none;
+}
+.row.open .chev {
+  transform: rotate(90deg);
+}
+.expanded {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+.expanded:last-child {
+  border-bottom: none;
 }
 .lives {
   font-size: 13px;

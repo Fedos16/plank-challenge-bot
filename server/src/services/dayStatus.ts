@@ -31,7 +31,7 @@ export function isFinableState(state: DayState): boolean {
   return isMissState(state) || state === 'frozen';
 }
 
-function mapSubmissionStatus(status: string): DayState {
+export function mapSubmissionStatus(status: string): DayState {
   switch (status) {
     case 'counted':
       return 'done';

@@ -93,6 +93,30 @@ export interface FeedItem extends WorkoutDTO {
   isMe: boolean;
 }
 
+/**
+ * Тренировки одного человека так, как их видит группа: занятие — одна строка, даже если
+ * источник разрезал его по видам активности; снятые админом видны (группа должна понимать,
+ * что случилось с тренировкой), дубли из второго источника — нет. От новых к старым.
+ */
+export async function userFeed(ch: Challenge, userId: number, from: Date, to: Date): Promise<WorkoutDTO[]> {
+  const workouts = await loadWorkouts(userId, from, to);
+  const { verdicts, sessions } = classify(workouts, rulesOf(ch));
+  const byId = new Map(workouts.map((w) => [w.id, w]));
+
+  const items: WorkoutDTO[] = [];
+  for (const session of sessions) {
+    const segments = session.workoutIds
+      .map((id) => byId.get(id))
+      .filter((w): w is Workout => w !== undefined);
+    const dto = sessionToWorkoutDTO(segments, session);
+    if (dto) items.push(dto);
+  }
+  for (const w of workouts) {
+    if (verdicts.get(w.id) === 'excluded') items.push(toWorkoutDTO(w, 'excluded'));
+  }
+  return items.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
 /** За сколько дней показываем общую ленту и сколько в ней записей. */
 const FEED_DAYS = 14;
 const FEED_LIMIT = 40;
@@ -110,26 +134,11 @@ export async function getFitnessFeed(ch: Challenge, meId: number): Promise<FeedI
 
   const items: FeedItem[] = [];
   for (const p of participations) {
-    const workouts = await loadWorkouts(p.userId, from, period.to);
-    const { verdicts, sessions } = classify(workouts, rulesOf(ch));
-    const byId = new Map(workouts.map((w) => [w.id, w]));
     const isMe = p.userId === meId;
     const name = displayName(p.user);
     // заметка личная: мало ли что человек записал для себя
-    const withAuthor = (dto: WorkoutDTO): FeedItem => ({ ...dto, note: isMe ? dto.note : null, userId: p.userId, name, isMe });
-
-    // Занятие — одна строка, даже если источник разрезал его по видам активности
-    for (const session of sessions) {
-      const segments = session.workoutIds
-        .map((id) => byId.get(id))
-        .filter((w): w is Workout => w !== undefined);
-      const dto = sessionToWorkoutDTO(segments, session);
-      if (dto) items.push(withAuthor(dto));
-    }
-    // Снятые админом в сессии не входят, но в ленте видны: группа должна понимать, что
-    // случилось с тренировкой. Дубли не показываем — это та же тренировка из второго источника.
-    for (const w of workouts) {
-      if (verdicts.get(w.id) === 'excluded') items.push(withAuthor(toWorkoutDTO(w, 'excluded')));
+    for (const dto of await userFeed(ch, p.userId, from, period.to)) {
+      items.push({ ...dto, note: isMe ? dto.note : null, userId: p.userId, name, isMe });
     }
   }
   return items.sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, FEED_LIMIT);
