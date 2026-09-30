@@ -207,6 +207,7 @@ watch(() => props.userId, load);
               </div>
             </div>
             <div v-if="c.plank" class="fire">🔥 {{ c.plank.currentStreak }}</div>
+            <div v-else-if="c.fitness?.outOfCompetition" class="muted">вне зачёта</div>
             <div v-else-if="c.fitness" class="lives">{{ hearts(c.fitness.livesLeft, c.fitness.livesTotal) }}</div>
             <span class="chev">›</span>
           </div>

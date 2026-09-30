@@ -265,6 +265,19 @@ async function reinstate(p: AdminFitnessParticipant) {
   }, 'Участник снова в игре');
 }
 
+async function setOutOfCompetition(p: AdminFitnessParticipant, outOfCompetition: boolean) {
+  const id = selectedId.value;
+  if (!id) return;
+  const question = outOfCompetition
+    ? `Перевести ${p.name} вне зачёта? Тренировки и цель останутся видны, но итогов недель и жизней не будет. После первого итога недели это уже не поменять.`
+    : `Вернуть ${p.name} в зачёт? Недели будут подводиться, жизни — сгорать, как у всех.`;
+  if (!(await confirmAction(question))) return;
+  await run(async () => {
+    await api.adminSetOutOfCompetition(id, p.participationId, outOfCompetition);
+    people.value = (await api.adminFitnessParticipants(id)).rows;
+  }, outOfCompetition ? 'Участник вне зачёта' : 'Участник в зачёте');
+}
+
 async function toggleModeration(p: AdminFitnessParticipant) {
   const id = selectedId.value;
   if (!id) return;
@@ -554,7 +567,8 @@ onMounted(async () => {
                 <span v-if="p.status !== 'active'" class="muted">· вышел</span>
               </div>
               <div class="muted">
-                {{ hearts(p.lives.left, p.lives.total) }}
+                <template v-if="p.outOfCompetition">вне зачёта</template>
+                <template v-else>{{ hearts(p.lives.left, p.lives.total) }}</template>
                 <template v-if="p.lives.eliminated"> · выбыл на неделе {{ p.lives.eliminatedAtWeekNumber }}</template>
                 <template v-else-if="p.week"> · {{ p.week.done }} из {{ p.week.required }} на неделе</template>
                 · всего {{ p.totalCounted }}
@@ -574,6 +588,14 @@ onMounted(async () => {
               {{ syncsFor === p.participationId ? 'Скрыть выгрузки' : 'Выгрузки' }}
             </button>
             <button v-if="p.lives.eliminated" class="btn small" @click="reinstate(p)">Вернуть в игру</button>
+            <!-- режим выбирается до старта: после первого итога недели он заморожен -->
+            <button
+              v-if="settings.canStart && p.status === 'active'"
+              class="btn small secondary"
+              @click="setOutOfCompetition(p, !p.outOfCompetition)"
+            >
+              {{ p.outOfCompetition ? 'В зачёт' : 'Вне зачёта' }}
+            </button>
             <button v-if="p.status === 'active'" class="btn small secondary" @click="setStatus(p, 'left')">Убрать</button>
             <button v-else class="btn small secondary" @click="setStatus(p, 'active')">Вернуть в челлендж</button>
           </div>

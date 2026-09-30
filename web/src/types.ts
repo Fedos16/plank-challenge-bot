@@ -36,6 +36,7 @@ export interface FitnessSummary {
   phase: ChallengePhase;
   hasGoal: boolean;
   progressPercent: number | null;
+  outOfCompetition: boolean;
   livesLeft: number;
   livesTotal: number;
   eliminated: boolean;
@@ -446,6 +447,8 @@ export interface WeekHistory {
 export type TrialWeek = Omit<CurrentWeek, 'weekNumber'>;
 
 export interface GameState {
+  /** Участвует вне зачёта: норма и полоска недели видны, но итогов и жизней нет. */
+  outOfCompetition: boolean;
   lives: LivesInfo;
   currentWeek: CurrentWeek | null;
   /** null — пробной недели не было или участник вступил уже после неё. */
@@ -518,6 +521,7 @@ export interface FitnessLeaderboardRow {
   name: string;
   photoUrl: string | null;
   isMe: boolean;
+  outOfCompetition: boolean;
   livesLeft: number;
   livesTotal: number;
   eliminated: boolean;
@@ -627,6 +631,7 @@ export interface AdminFitnessParticipant {
   name: string;
   username: string | null;
   status: string;
+  outOfCompetition: boolean;
   joinedAt: string;
   goalType: GoalType | null;
   progress: GoalProgress | null;
@@ -753,6 +758,8 @@ export interface WeekReportRow {
   done: number;
   required: number;
   status: ReportStatus;
+  /** Участвует вне зачёта с самого начала (status всегда out), в отличие от выбывшего. */
+  outOfCompetition: boolean;
   lifeLost: boolean;
   eliminatedHere: boolean;
   livesLeft: number;

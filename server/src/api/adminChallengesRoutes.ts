@@ -16,6 +16,7 @@ import {
   getGameState,
   recalcWeek,
   reinstate,
+  setOutOfCompetition,
   unforgiveWeek,
 } from '../services/fitness/evaluation';
 import { announceWeekResults, sendWeekSummaryNow } from '../services/fitness/fitnessReport';
@@ -125,6 +126,7 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
         name: displayName(p.user),
         username: p.user.username,
         status: p.status,
+        outOfCompetition: p.outOfCompetition,
         joinedAt: p.joinedAt.toISOString(),
         goalType: (p.goal?.goalType as GoalType | undefined) ?? null,
         // админ видит цифры: он ведёт челлендж и сверяет стартовые замеры
@@ -193,6 +195,21 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
     const result = await reinstate(ch, pid);
     if (typeof result === 'string') return reply.code(404).send({ error: result });
     return { ok: true, ...result };
+  });
+
+  // Вне зачёта: всё видно, но итогов недель и жизней нет (см. setOutOfCompetition)
+  app.post('/:id/participants/:pid/competition', async (req, reply) => {
+    const params = req.params as { id: string; pid: string };
+    const ch = await requireFitness(params.id, reply);
+    if (!ch) return;
+    const pid = parseId(params.pid, reply, 'bad_participation_id');
+    if (pid === null) return;
+    const value = ((req.body ?? {}) as { outOfCompetition?: unknown }).outOfCompetition;
+    if (typeof value !== 'boolean') return reply.code(400).send({ error: 'bad_out_of_competition' });
+    const result = await setOutOfCompetition(ch, pid, value);
+    if (result === 'competition_locked') return reply.code(400).send({ error: result });
+    if (typeof result === 'string') return reply.code(404).send({ error: result });
+    return { ok: true };
   });
 
   // Тренировки участника для модерации

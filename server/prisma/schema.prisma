@@ -91,6 +91,9 @@ model Participation {
   status      String    @default("active") // active | left
   joinedAt    DateTime  @default(now())
   leftAt      DateTime? // когда участника исключили (null, пока он в челлендже)
+  /// Фитнес: участвует вне зачёта — всё видно, но итогов недель и жизней нет. Ставит админ,
+  /// пока в челлендже не подведено ни одной недели
+  outOfCompetition Boolean @default(false)
 
   challenge         Challenge          @relation(fields: [challengeId], references: [id], onDelete: Cascade)
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)

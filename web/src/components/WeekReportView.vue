@@ -278,7 +278,7 @@ watch(
           v-for="(r, i) in personal"
           :key="r.participationId"
           class="entry rise"
-          :class="{ me: r.isMe, out: r.status === 'out' }"
+          :class="{ me: r.isMe, out: r.status === 'out' && !r.outOfCompetition }"
           :style="{ '--i': i + 3 }"
         >
           <div class="entry-head">
@@ -286,7 +286,9 @@ watch(
             <span v-else class="pic">{{ initials(r.name) }}</span>
             <span class="name">{{ r.name }}</span>
             <span v-if="r.isMe" class="me-tag">вы</span>
-            <span class="lives" :title="`жизней: ${r.livesLeft} из ${r.livesTotal}`">{{ hearts(r.livesLeft, r.livesTotal) }}</span>
+            <span v-if="!r.outOfCompetition" class="lives" :title="`жизней: ${r.livesLeft} из ${r.livesTotal}`">{{
+              hearts(r.livesLeft, r.livesTotal)
+            }}</span>
           </div>
 
           <template v-if="pathOf(r)">

@@ -70,7 +70,8 @@ function fitnessDay(c: MyChallenge): string {
         <div class="muted">{{ c.description }}</div>
         <div class="challenge-card-meta">
           <span>{{ fitnessDay(c) }}</span>
-          <span v-if="c.fitness">{{ hearts(c.fitness.livesLeft, c.fitness.livesTotal) }}</span>
+          <span v-if="c.fitness?.outOfCompetition">вне зачёта</span>
+          <span v-else-if="c.fitness">{{ hearts(c.fitness.livesLeft, c.fitness.livesTotal) }}</span>
           <span v-if="typeof c.fitness?.progressPercent === 'number'" class="fire">
             🎯 {{ c.fitness.progressPercent }}%
           </span>

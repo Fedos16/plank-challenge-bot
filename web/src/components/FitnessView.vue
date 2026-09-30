@@ -126,7 +126,8 @@ const trial = computed(() => (data.value?.challenge.phase === 'upcoming' ? data.
 const heroKicker = computed(() => {
   const week = data.value?.game.currentWeek;
   if (week) return `Неделя ${week.weekNumber}`;
-  return trial.value ? 'Пробная неделя' : 'Жизни';
+  if (trial.value) return 'Пробная неделя';
+  return data.value?.game.outOfCompetition ? 'Вне зачёта' : 'Жизни';
 });
 
 /** Подпись под счётом недели: сколько осталось и сколько на это дней. Номер недели — в шапке блока. */
@@ -222,6 +223,10 @@ watch(() => props.challengeId, load);
             <b>☠️ Вы выбыли из зачёта</b> на неделе {{ data.game.lives.eliminatedAtWeekNumber }}.
             Тренировки, вес и замеры можно вести дальше — просто вне зачёта.
           </div>
+          <div v-else-if="data.game.outOfCompetition" class="card">
+            <b>Вы участвуете вне зачёта.</b> Тренировки, норма недели и цель видны, как у всех, но итогов
+            недель и жизней у вас нет.
+          </div>
 
           <!-- Игра: жизни и норма текущей недели -->
           <div
@@ -237,7 +242,11 @@ watch(() => props.challengeId, load);
             </span>
             <div class="hero-top">
               <span class="hero-kicker">{{ heroKicker }}</span>
-              <span class="hero-lives">{{ hearts(data.game.lives.left, data.game.lives.total) }}</span>
+              <!-- без недели «вне зачёта» уже стоит в заголовке блока -->
+              <template v-if="data.game.outOfCompetition">
+                <span v-if="data.game.currentWeek || trial" class="hero-kicker">вне зачёта</span>
+              </template>
+              <span v-else class="hero-lives">{{ hearts(data.game.lives.left, data.game.lives.total) }}</span>
             </div>
             <template v-if="data.game.currentWeek">
               <div class="num">

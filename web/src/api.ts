@@ -201,6 +201,11 @@ export const api = {
       `/admin/challenges/${id}/participants/${participationId}/reinstate`,
       { method: 'POST' },
     ),
+  adminSetOutOfCompetition: (id: number, participationId: number, outOfCompetition: boolean) =>
+    request<{ ok: boolean }>(`/admin/challenges/${id}/participants/${participationId}/competition`, {
+      method: 'POST',
+      body: JSON.stringify({ outOfCompetition }),
+    }),
   adminParticipantWorkouts: (id: number, participationId: number) =>
     request<{ workouts: Workout[] }>(`/admin/challenges/${id}/participants/${participationId}/workouts`),
   adminParticipantSyncs: (id: number, participationId: number) =>

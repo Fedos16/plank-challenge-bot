@@ -70,8 +70,9 @@ export async function evaluateClosedWeeks(
   });
   if (indexes.length === 0) return [];
 
+  // вне зачёта — без итогов недель: жизни не сгорают, выбыть нельзя
   const participations = await prisma.participation.findMany({
-    where: { challengeId: ch.id, status: 'active' },
+    where: { challengeId: ch.id, status: 'active', outOfCompetition: false },
     include: { user: true },
   });
   const existing = await prisma.weekResult.findMany({
@@ -203,6 +204,8 @@ export interface TrialWeekDTO {
 }
 
 export interface GameStateDTO {
+  /** Участвует вне зачёта: норма и полоска недели видны, но итогов и жизней нет. */
+  outOfCompetition: boolean;
   lives: Pick<LivesState, 'total' | 'left' | 'eliminated'> & { eliminatedAtWeekNumber: number | null };
   currentWeek: CurrentWeekDTO | null;
   /** null — пробной недели не было или участник вступил уже после неё. */
@@ -324,6 +327,7 @@ export async function getGameState(ch: Challenge, participation: Participation):
   const trialWeek = await trialWeekOf(ch, participation);
 
   return {
+    outOfCompetition: participation.outOfCompetition,
     lives: {
       total: lives.total,
       left: lives.left,
@@ -432,6 +436,24 @@ export async function recalcWeek(
       passed: c.passed,
     },
   });
+}
+
+/**
+ * Перевести участника в зачёт или вне зачёта. Только пока в челлендже не подведено ни одной
+ * недели: режим выбирается до старта, а потом не меняется, чтобы не переписывать итоги и не
+ * спасаться от потери жизни уходом из зачёта.
+ */
+export async function setOutOfCompetition(
+  ch: Challenge,
+  participationId: number,
+  outOfCompetition: boolean,
+): Promise<Participation | WeekActionError | 'competition_locked'> {
+  const participation = await prisma.participation.findFirst({
+    where: { id: participationId, challengeId: ch.id },
+  });
+  if (!participation) return 'participant_not_found';
+  if (await prisma.weekResult.count({ where: { challengeId: ch.id } })) return 'competition_locked';
+  return prisma.participation.update({ where: { id: participationId }, data: { outOfCompetition } });
 }
 
 /** Вернуть выбывшего: прощает неделю выбывания и все провалы после неё. */

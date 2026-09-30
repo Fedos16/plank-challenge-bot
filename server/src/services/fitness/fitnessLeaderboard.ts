@@ -21,6 +21,8 @@ export interface FitnessLeaderboardRow {
   name: string;
   photoUrl: string | null;
   isMe: boolean;
+  /** Вне зачёта: жизней нет, вместо них пометка. */
+  outOfCompetition: boolean;
   livesLeft: number;
   livesTotal: number;
   eliminated: boolean;
@@ -71,6 +73,7 @@ export async function getFitnessLeaderboard(ch: Challenge, meId: number): Promis
       name: displayName(p.user),
       photoUrl: p.user.photoUrl,
       isMe: p.userId === meId,
+      outOfCompetition: p.outOfCompetition,
       livesLeft: game.lives.left,
       livesTotal: game.lives.total,
       eliminated: game.lives.eliminated,

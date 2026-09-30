@@ -103,7 +103,8 @@ onMounted(load);
           <div v-else class="pic">{{ initials(r.name) }}</div>
           <span class="name">{{ r.name }}</span>
           <span v-if="r.isMe" class="me-tag">вы</span>
-          <span class="lives">{{ hearts(r.livesLeft, r.livesTotal) }}</span>
+          <span v-if="r.outOfCompetition" class="lives off">вне зачёта</span>
+          <span v-else class="lives">{{ hearts(r.livesLeft, r.livesTotal) }}</span>
         </div>
 
         <div v-if="r.goalType" class="goal">
@@ -217,6 +218,10 @@ onMounted(load);
   flex: 0 0 auto;
   font-size: 12px;
   letter-spacing: 1px;
+}
+.lives.off {
+  letter-spacing: 0;
+  color: var(--hint);
 }
 .goal {
   margin-top: 10px;

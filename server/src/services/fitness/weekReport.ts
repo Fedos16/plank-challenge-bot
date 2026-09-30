@@ -22,6 +22,8 @@ export interface WeekReportRow {
   done: number;
   required: number;
   status: ReportStatus;
+  /** Участвует вне зачёта с самого начала (status всегда out), в отличие от выбывшего. */
+  outOfCompetition: boolean;
   /** Жизнь потеряна именно на этой неделе. */
   lifeLost: boolean;
   /** На этой неделе жизни кончились. */
@@ -176,7 +178,7 @@ export async function getWeekReport(
     const done = official?.done ?? c.done;
     const required = official?.required ?? c.required;
     let status: ReportStatus;
-    if (outBefore || state?.outOfGame) status = 'out';
+    if (p.outOfCompetition || outBefore || state?.outOfGame) status = 'out';
     else if (official) status = official.passed ? 'passed' : official.forgiven ? 'forgiven' : 'failed';
     else status = done >= required ? 'passed' : running ? 'in_progress' : 'failed';
 
@@ -202,6 +204,7 @@ export async function getWeekReport(
       done,
       required,
       status,
+      outOfCompetition: p.outOfCompetition,
       lifeLost: state?.lifeLost ?? false,
       eliminatedHere: lives.eliminatedAtWeek === weekIndex,
       livesLeft: state?.livesAfter ?? lives.left,

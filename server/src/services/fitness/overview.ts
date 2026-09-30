@@ -148,6 +148,7 @@ export interface FitnessSummary {
   phase: ChallengeTimeline['phase'];
   hasGoal: boolean;
   progressPercent: number | null;
+  outOfCompetition: boolean;
   livesLeft: number;
   livesTotal: number;
   eliminated: boolean;
@@ -167,6 +168,7 @@ export async function getFitnessSummary(
     phase: timeline.phase,
     hasGoal: goal !== null,
     progressPercent: goal?.progress.percent ?? null,
+    outOfCompetition: game.outOfCompetition,
     livesLeft: game.lives.left,
     livesTotal: game.lives.total,
     eliminated: game.lives.eliminated,
