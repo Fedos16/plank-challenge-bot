@@ -4,7 +4,7 @@ import type { Challenge } from '@prisma/client';
 import { adminPreHandler, authPreHandler } from './auth';
 import { parseId } from './resolve';
 import { prisma } from '../lib/prisma';
-import { dateToDay, dayToDate, dayjs } from '../lib/time';
+import { dateToDay, dayToDate, dayjs, todayDay } from '../lib/time';
 import { can, challengeTimeline, getChallengeById } from '../services/challenge';
 import { displayName } from '../services/users';
 import { config } from '../lib/config';
@@ -19,7 +19,7 @@ import {
   unforgiveWeek,
 } from '../services/fitness/evaluation';
 import { announceWeekResults, sendWeekSummaryNow } from '../services/fitness/fitnessReport';
-import { startFitnessChallenge } from '../services/fitness/start';
+import { earliestStartDay, startFitnessChallenge } from '../services/fitness/start';
 import { listWorkouts, setWorkoutExcluded, setWorkoutForceCounted } from '../services/fitness/workouts';
 import { listIngests } from '../services/ingestLog';
 
@@ -246,11 +246,16 @@ export async function adminChallengesRoutes(app: FastifyInstance): Promise<void>
     return { ok: true };
   });
 
-  // «Старт»: челлендж начинается сегодня, всё до этого — пробный период (см. startFitnessChallenge)
+  // «Старт»: челлендж начинается в выбранный день (по умолчанию сегодня), всё до него — пробный
+  // период (см. startFitnessChallenge)
   app.post('/:id/start', async (req, reply) => {
     const ch = await requireFitness((req.params as { id: string }).id, reply);
     if (!ch) return;
-    const res = await startFitnessChallenge(ch);
+    const day = ((req.body ?? {}) as { startDate?: unknown }).startDate;
+    if (day !== undefined && (typeof day !== 'string' || !isDay(day))) {
+      return reply.code(400).send({ error: 'bad_start_date' });
+    }
+    const res = await startFitnessChallenge(ch, day);
     if (typeof res === 'string') return reply.code(400).send({ error: res });
     const updated = await prisma.challenge.findUniqueOrThrow({ where: { id: ch.id } });
     return { ...res, challenge: await serialize(updated) };
@@ -340,9 +345,7 @@ function parseSettings(body: Record<string, unknown>): SettingsPatch | SettingsE
 
   if (body.startDate !== undefined) {
     const day = body.startDate;
-    if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !dayjs.utc(day).isValid()) {
-      return 'bad_start_date';
-    }
+    if (typeof day !== 'string' || !isDay(day)) return 'bad_start_date';
     data.startDate = dayToDate(day);
   }
 
@@ -400,11 +403,17 @@ function parseSettings(body: Record<string, unknown>): SettingsPatch | SettingsE
   return data;
 }
 
+/** Строка YYYY-MM-DD с существующей датой: строгий разбор, иначе 31.09 молча станет 01.10. */
+function isDay(s: string): boolean {
+  return dayjs.utc(s, 'YYYY-MM-DD', true).isValid();
+}
+
 async function serialize(ch: Challenge) {
   // «Старт» доступен, пока не подведено ни одной недели: потом сдвиг старта переписал бы итоги
   const closedWeeks = await prisma.weekResult.count({ where: { challengeId: ch.id } });
   return {
     canStart: closedWeeks === 0 && challengeTimeline(ch).phase !== 'finished',
+    earliestStartDate: earliestStartDay(todayDay(ch.timezone)),
     id: ch.id,
     key: ch.key,
     kind: ch.kind,

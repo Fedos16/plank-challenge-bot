@@ -220,8 +220,11 @@ export const api = {
       `/admin/challenges/${id}/evaluate`,
       { method: 'POST' },
     ),
-  adminStartFitness: (id: number) =>
-    request<AdminStartResult>(`/admin/challenges/${id}/start`, { method: 'POST' }),
+  adminStartFitness: (id: number, startDate: string) =>
+    request<AdminStartResult>(`/admin/challenges/${id}/start`, {
+      method: 'POST',
+      body: JSON.stringify({ startDate }),
+    }),
   adminSendWeekSummary: (id: number) =>
     request<{ ok: boolean }>(`/admin/challenges/${id}/week-summary`, { method: 'POST' }),
 

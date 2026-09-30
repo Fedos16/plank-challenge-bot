@@ -581,6 +581,8 @@ export interface AdminChallengeRow extends ChallengeTimeline {
 export interface AdminFitnessChallenge extends ChallengeTimeline, FitnessSettings {
   /** Можно нажать «Старт»: ни одна неделя ещё не подведена. */
   canStart: boolean;
+  /** С какого дня можно начать задним числом: раньше первая неделя уже кончилась бы. */
+  earliestStartDate: string;
   id: number;
   key: string;
   kind: string;
@@ -599,7 +601,7 @@ export interface AdminFitnessChallenge extends ChallengeTimeline, FitnessSetting
 /** Что сделал «Старт» с целью участника. */
 export interface AdminStartedParticipant {
   name: string;
-  status: 'updated' | 'no_goal' | 'no_entries' | 'target_reached';
+  status: 'updated' | 'no_goal' | 'no_entries' | 'target_reached' | 'joined_after_start';
   changes: { metric: 'weightKg' | 'bodyFat' | 'muscle'; before: number | null; after: number }[];
 }
 

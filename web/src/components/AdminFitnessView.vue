@@ -94,6 +94,7 @@ async function select(id: number) {
   const [s, p] = await Promise.all([api.adminGetFitness(id), api.adminFitnessParticipants(id)]);
   settings.value = s;
   duration.value = s.durationDays === null ? '' : String(s.durationDays);
+  startDay.value = todayInZone(s.timezone);
   people.value = p.rows;
 }
 
@@ -147,16 +148,19 @@ async function save() {
 // ---- Старт ----
 const starting = ref(false);
 const startResult = ref<AdminStartResult | null>(null);
+/** С какого дня начать: по умолчанию сегодня, прошедший — если нажать вовремя забыли. */
+const startDay = ref('');
 
 async function startNow() {
   const s = settings.value;
-  if (!s || starting.value) return;
-  const question =
-    'Начать челлендж сегодня? Всё до сегодняшнего дня станет пробным периодом, стартовые замеры в целях пересчитаются.';
+  const day = startDay.value;
+  if (!s || !day || starting.value) return;
+  const when = day === todayInZone(s.timezone) ? 'сегодня' : `с ${formatDateRu(day)}`;
+  const question = `Начать челлендж ${when}? Всё до этого дня станет пробным периодом, стартовые замеры в целях пересчитаются.`;
   if (!(await confirmAction(question))) return;
   starting.value = true;
   try {
-    const res = await api.adminStartFitness(s.id);
+    const res = await api.adminStartFitness(s.id, day);
     settings.value = res.challenge;
     duration.value = res.challenge.durationDays === null ? '' : String(res.challenge.durationDays);
     startResult.value = res;
@@ -179,6 +183,7 @@ function startLine(p: AdminStartedParticipant): string {
   if (p.status === 'no_goal') return 'цели ещё нет';
   if (p.status === 'no_entries') return 'замеров до старта нет, старт прежний';
   if (p.status === 'target_reached') return 'от нового старта цель уже достигнута — старт прежний, цель надо поправить';
+  if (p.status === 'joined_after_start') return 'вступил после дня старта — старт прежний, по замеру при вступлении';
   const moved = p.changes.filter((c) => c.before !== c.after);
   if (!moved.length) return 'старт не изменился';
   return moved.map((c) => `${START_METRIC[c.metric]} ${c.before ?? '—'} → ${c.after}`).join(', ');
@@ -458,15 +463,26 @@ onMounted(async () => {
       <div v-if="section === 'settings' && (settings.canStart || startResult)" class="card">
         <h3>🏁 Старт</h3>
         <div class="muted" style="margin-bottom: 10px">
-          Нажмите в день старта. Челлендж начнётся сегодня, {{ formatDateRu(todayInZone(settings.timezone)) }}, а всё,
-          что было раньше, станет пробным периодом: тренировки останутся в журнале без зачёта, итогов и потери
-          жизней за него не будет. Дата окончания не изменится<template v-if="settings.endDate">
-            — {{ formatDateRu(settings.endDate) }}</template>. Стартовые замеры в целях пересчитаются: среднее по
-          взвешиваниям до сегодняшнего дня.
+          Челлендж начнётся в выбранный день, а всё, что было раньше, станет пробным периодом: тренировки останутся
+          в журнале без зачёта, итогов и потери жизней за него не будет. Дата окончания не изменится<template
+            v-if="settings.endDate"> — {{ formatDateRu(settings.endDate) }}</template>. Стартовые замеры в целях
+          пересчитаются: среднее по взвешиваниям до дня старта. Забыли нажать вовремя — выберите прошедший день, но не
+          раньше {{ formatDateRu(settings.earliestStartDate) }}: иначе первая неделя уже закончилась бы.
         </div>
-        <button v-if="settings.canStart" class="btn" :disabled="starting" @click="startNow">
-          {{ starting ? 'Запускаем…' : '🏁 Старт' }}
-        </button>
+        <template v-if="settings.canStart">
+          <label class="field">
+            <span class="lbl">День старта</span>
+            <input
+              type="date"
+              v-model="startDay"
+              :min="settings.earliestStartDate"
+              :max="todayInZone(settings.timezone)"
+            />
+          </label>
+          <button class="btn" :disabled="starting || !startDay" @click="startNow">
+            {{ starting ? 'Запускаем…' : '🏁 Старт' }}
+          </button>
+        </template>
         <div v-if="startResult" style="margin-top: 12px">
           <div v-for="p in startResult.participants" :key="p.name" class="start-row">
             <b>{{ p.name }}</b> <span class="muted">· {{ startLine(p) }}</span>
