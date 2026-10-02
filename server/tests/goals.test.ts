@@ -37,48 +37,34 @@ const entry = (iso: string, weightKg: number, bodyFat: number | null = null) => 
   muscle: null,
 });
 
-test('currentMetric: среднее по трём последним замерам', () => {
-  const entries = [
-    entry('2026-10-10T07:00:00Z', 84.0),
-    entry('2026-10-09T07:00:00Z', 85.0),
-    entry('2026-10-08T07:00:00Z', 86.0),
-    entry('2026-10-07T07:00:00Z', 99.0), // четвёртый в выборку не идёт
-  ];
-  assert.equal(currentMetric(entries, 'weightKg'), 85);
-});
-
-test('currentMetric: порядок входа не важен', () => {
+test('currentMetric: последнее взвешивание, порядок входа не важен', () => {
   const entries = [
     entry('2026-10-08T07:00:00Z', 86.0),
     entry('2026-10-10T07:00:00Z', 84.0),
     entry('2026-10-09T07:00:00Z', 85.0),
   ];
-  assert.equal(currentMetric(entries, 'weightKg'), 85);
+  assert.equal(currentMetric(entries, 'weightKg'), 84);
 });
 
-test('currentMetric: замеры старше недели от последнего не усредняются', () => {
-  const entries = [
-    entry('2026-10-20T07:00:00Z', 82.0),
-    entry('2026-10-05T07:00:00Z', 90.0), // 15 дней до последнего
-  ];
-  assert.equal(currentMetric(entries, 'weightKg'), 82);
-});
-
-test('currentMetric: окно считается от последнего замера, а не от сегодня', () => {
-  // человек не взвешивался год — прогресс остаётся на последней известной точке
+test('currentMetric: кто давно не взвешивался — остаётся последняя известная точка', () => {
   const entries = [entry('2025-01-02T07:00:00Z', 88.0), entry('2025-01-01T07:00:00Z', 89.0)];
-  assert.equal(currentMetric(entries, 'weightKg'), 88.5);
+  assert.equal(currentMetric(entries, 'weightKg'), 88);
 });
 
-test('currentMetric: пропуски показателя пропускаются', () => {
+test('currentMetric: показатель берётся из последнего замера, где он есть', () => {
   const entries = [
     entry('2026-10-10T07:00:00Z', 84.0, null), // весы не измерили жир
     entry('2026-10-09T07:00:00Z', 85.0, 21.0),
     entry('2026-10-08T07:00:00Z', 86.0, 22.0),
   ];
-  assert.equal(currentMetric(entries, 'bodyFat'), 21.5);
+  assert.equal(currentMetric(entries, 'weightKg'), 84);
+  assert.equal(currentMetric(entries, 'bodyFat'), 21);
   assert.equal(currentMetric(entries, 'muscle'), null);
   assert.equal(currentMetric([], 'weightKg'), null);
+});
+
+test('currentMetric: округление до десятых', () => {
+  assert.equal(currentMetric([entry('2026-10-10T07:00:00Z', 82.55)], 'weightKg'), 82.6);
 });
 
 const withMuscle = (iso: string, weightKg: number, muscle: number | null) => ({
@@ -92,10 +78,10 @@ test('currentMetric: мышцы в килограммах считаются о�
     withMuscle('2026-10-09T07:00:00Z', 90.0, 40.0), // 36,0 кг
     withMuscle('2026-10-08T07:00:00Z', 100.0, 39.0), // 39,0 кг
   ];
-  assert.equal(currentMetric(entries, 'muscle', 'kg'), 37);
+  assert.equal(currentMetric(entries, 'muscle', 'kg'), 36);
   // проценты — прежнее поведение, и оно же по умолчанию
-  assert.equal(currentMetric(entries, 'muscle', 'percent'), 41.3);
-  assert.equal(currentMetric(entries, 'muscle'), 41.3);
+  assert.equal(currentMetric(entries, 'muscle', 'percent'), 45);
+  assert.equal(currentMetric(entries, 'muscle'), 45);
 });
 
 test('currentMetric: единица мышц не трогает остальные показатели', () => {
@@ -166,9 +152,9 @@ test('startMetric: жир усредняется только по замера�
   assert.equal(startMetric(entries, 'bodyFat', 'percent', START_AT), 32.7);
 });
 
-test('startMetric: без замеров за пробную неделю — последнее известное, как у текущего', () => {
+test('startMetric: без замеров за пробную неделю — последнее известное значение', () => {
   const entries = [entry('2026-09-10T06:00:00Z', 80, 25), entry('2026-09-12T06:00:00Z', 79, 24)];
-  assert.equal(startMetric(entries, 'weightKg', 'percent', START_AT), 79.5);
+  assert.equal(startMetric(entries, 'weightKg', 'percent', START_AT), 79);
   assert.equal(startMetric([], 'weightKg', 'percent', START_AT), null);
 });
 

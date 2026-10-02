@@ -48,10 +48,6 @@ const START_FIELD: Record<Metric, 'startWeightKg' | 'startBodyFat' | 'startMuscl
 /** Потолок для мышц в килограммах — отсекает опечатки вроде лишнего нуля. */
 const MUSCLE_KG_MAX = 150;
 
-/** Сколько последних замеров усредняем и за какой срок: биоимпедансные весы шумят. */
-const CURRENT_SAMPLES = 3;
-const CURRENT_WINDOW_DAYS = 7;
-
 /** Пробная неделя для стартового замера: столько дней перед стартом усредняем целиком. */
 const START_WINDOW_DAYS = 7;
 
@@ -106,27 +102,23 @@ function averageOf(points: MetricPoint[]): number | null {
 }
 
 /**
- * Текущее значение показателя: среднее по последним замерам (до трёх) за неделю перед самым
- * свежим. Окно считается от последнего замера, а не от сегодня: кто не взвешивался две
- * недели, у того прогресс не обнуляется, а остаётся на последней известной точке.
+ * Текущее значение показателя — последний замер, где он есть: весы прислали вес без жира —
+ * жир берётся из предыдущего взвешивания. Кто давно не взвешивался, у того прогресс не
+ * обнуляется, а остаётся на последней известной точке.
  */
 export function currentMetric(
   entries: Pick<WeightEntry, 'measuredAt' | Metric>[],
   metric: Metric,
   muscleUnit: MuscleUnit = 'percent',
 ): number | null {
-  const points = metricPoints(entries, metric, muscleUnit);
-  const newest = points[0];
-  if (!newest) return null;
-  const since = newest.at - CURRENT_WINDOW_DAYS * 86_400_000;
-  return averageOf(points.filter((e) => e.at >= since).slice(0, CURRENT_SAMPLES));
+  const newest = metricPoints(entries, metric, muscleUnit)[0];
+  return newest ? averageOf([newest]) : null;
 }
 
 /**
  * Стартовое значение показателя: среднее по всем замерам пробной недели — семи дней перед
- * стартом. Не три последних, как у текущего: кто худел всю неделю, у того сброшенное в её
- * начале иначе выпало бы из прогресса. Если за неделю замеров нет — последнее известное
- * значение, как у текущего.
+ * стартом. Одиночное взвешивание шумит, а по последнему кто худел всю неделю потерял бы
+ * сброшенное в её начале. Если за неделю замеров нет — последнее известное значение.
  */
 export function startMetric(
   entries: Pick<WeightEntry, 'measuredAt' | Metric>[],
