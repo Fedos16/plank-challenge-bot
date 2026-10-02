@@ -73,12 +73,18 @@ function weekLine(r: FitnessLeaderboardRow): string {
   return parts.join(' · ');
 }
 
-/** Цифры участника видны, только если он сам их открыл. */
-function bodyLine(p: FitnessParticipant | null): string {
-  if (!p?.body || p.body.current === null) return '';
-  const target = p.body.target !== null ? ` → ${formatNum(p.body.target)}` : '';
+/** Цифры участника — старт, сейчас и цель чипами. Видны, только если он сам их открыл. */
+function bodyChips(p: FitnessParticipant | null): { key: string; label: string; value: string }[] {
+  if (!p?.body || p.body.current === null) return [];
   const unit = p.body.unit ? ` ${UNIT_LABEL[p.body.unit]}` : '';
-  return `${formatNum(p.body.current)}${target}${unit}`;
+  const points = [
+    { key: 'start', label: 'старт', value: p.body.start },
+    { key: 'current', label: 'сейчас', value: p.body.current },
+    { key: 'target', label: 'цель', value: p.body.target },
+  ];
+  return points
+    .filter((c): c is typeof c & { value: number } => c.value !== null)
+    .map((c) => ({ ...c, value: `${formatNum(c.value)}${unit}` }));
 }
 
 function feedMeta(w: FeedItem): string {
@@ -115,7 +121,11 @@ onMounted(load);
           <div v-if="r.progressPercent !== null" class="bar">
             <div class="bar-fill" :style="{ width: r.progressPercent + '%' }" />
           </div>
-          <div v-if="bodyLine(p)" class="muted">{{ bodyLine(p) }}</div>
+          <div v-if="bodyChips(p).length" class="body-chips">
+            <span v-for="c in bodyChips(p)" :key="c.key" class="body-chip" :class="c.key">
+              <span class="k">{{ c.label }}</span>{{ c.value }}
+            </span>
+          </div>
         </div>
         <div v-else class="muted goal">⏳ цель не выбрана</div>
 
@@ -250,6 +260,30 @@ onMounted(load);
   height: 100%;
   border-radius: 4px;
   background: var(--green);
+}
+.body-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.body-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(128, 128, 128, 0.14);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.body-chip .k {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--hint);
+}
+.body-chip.current {
+  font-weight: 700;
 }
 .week {
   display: flex;
