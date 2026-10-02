@@ -52,6 +52,9 @@ const MUSCLE_KG_MAX = 150;
 const CURRENT_SAMPLES = 3;
 const CURRENT_WINDOW_DAYS = 7;
 
+/** Пробная неделя для стартового замера: столько дней перед стартом усредняем целиком. */
+const START_WINDOW_DAYS = 7;
+
 // ---------- чистые функции ----------
 
 /**
@@ -69,35 +72,72 @@ export function goalProgress(
   return Math.round(Math.min(100, Math.max(0, pct)));
 }
 
+interface MetricPoint {
+  at: number;
+  value: number;
+}
+
+/**
+ * Замеры одного показателя, от свежих к старым. Мышцы в килограммах считаются по каждому
+ * замеру от его же веса и только потом усредняются: средняя доля, умноженная на средний вес, —
+ * уже другое число.
+ */
+function metricPoints(
+  entries: Pick<WeightEntry, 'measuredAt' | Metric>[],
+  metric: Metric,
+  muscleUnit: MuscleUnit,
+): MetricPoint[] {
+  const inKg = metric === 'muscle' && muscleUnit === 'kg';
+  return entries
+    .map((e) => {
+      const raw = e[metric];
+      if (raw === null || raw === undefined) return null;
+      return { at: e.measuredAt.getTime(), value: inKg ? muscleKgOf(e.weightKg, raw) : raw };
+    })
+    .filter((e): e is MetricPoint => e !== null)
+    .sort((a, b) => b.at - a.at);
+}
+
+/** Среднее с округлением до десятых; пустая выборка — null. */
+function averageOf(points: MetricPoint[]): number | null {
+  if (points.length === 0) return null;
+  const sum = points.reduce((acc, e) => acc + e.value, 0);
+  return Math.round((sum / points.length) * 10) / 10;
+}
+
 /**
  * Текущее значение показателя: среднее по последним замерам (до трёх) за неделю перед самым
  * свежим. Окно считается от последнего замера, а не от сегодня: кто не взвешивался две
  * недели, у того прогресс не обнуляется, а остаётся на последней известной точке.
- *
- * Мышцы в килограммах считаются по каждому замеру от его же веса и только потом усредняются:
- * средняя доля, умноженная на средний вес, — уже другое число.
  */
 export function currentMetric(
   entries: Pick<WeightEntry, 'measuredAt' | Metric>[],
   metric: Metric,
   muscleUnit: MuscleUnit = 'percent',
 ): number | null {
-  const inKg = metric === 'muscle' && muscleUnit === 'kg';
-  const withValue = entries
-    .map((e) => {
-      const raw = e[metric];
-      if (raw === null || raw === undefined) return null;
-      return { at: e.measuredAt.getTime(), value: inKg ? muscleKgOf(e.weightKg, raw) : raw };
-    })
-    .filter((e): e is { at: number; value: number } => e !== null)
-    .sort((a, b) => b.at - a.at);
-  const newest = withValue[0];
+  const points = metricPoints(entries, metric, muscleUnit);
+  const newest = points[0];
   if (!newest) return null;
-
   const since = newest.at - CURRENT_WINDOW_DAYS * 86_400_000;
-  const sample = withValue.filter((e) => e.at >= since).slice(0, CURRENT_SAMPLES);
-  const sum = sample.reduce((acc, e) => acc + e.value, 0);
-  return Math.round((sum / sample.length) * 10) / 10;
+  return averageOf(points.filter((e) => e.at >= since).slice(0, CURRENT_SAMPLES));
+}
+
+/**
+ * Стартовое значение показателя: среднее по всем замерам пробной недели — семи дней перед
+ * стартом. Не три последних, как у текущего: кто худел всю неделю, у того сброшенное в её
+ * начале иначе выпало бы из прогресса. Если за неделю замеров нет — последнее известное
+ * значение, как у текущего.
+ */
+export function startMetric(
+  entries: Pick<WeightEntry, 'measuredAt' | Metric>[],
+  metric: Metric,
+  muscleUnit: MuscleUnit,
+  startAt: Date,
+): number | null {
+  const before = entries.filter((e) => e.measuredAt < startAt);
+  const since = startAt.getTime() - START_WINDOW_DAYS * 86_400_000;
+  const trial = metricPoints(before, metric, muscleUnit).filter((e) => e.at >= since);
+  return trial.length ? averageOf(trial) : currentMetric(before, metric, muscleUnit);
 }
 
 export interface GoalStartChange {
@@ -108,10 +148,10 @@ export interface GoalStartChange {
 }
 
 /**
- * Стартовые значения цели по замерам до старта — тем же способом, что и текущее значение:
- * одиночное взвешивание при вступлении шумит, а среднее за пробную неделю — нет. Показатели
- * без замеров не трогаем. null — от нового старта цель уже достигнута или смотрит не в ту
- * сторону: прогресс сломался бы, такую цель участник поправит сам.
+ * Стартовые значения цели по замерам до старта (см. startMetric): одиночное взвешивание при
+ * вступлении шумит, а среднее за пробную неделю — нет. Показатели без замеров не трогаем.
+ * null — от нового старта цель уже достигнута или смотрит не в ту сторону: прогресс сломался
+ * бы, такую цель участник поправит сам.
  */
 export function goalStartsFrom(
   goal: Pick<
@@ -119,10 +159,11 @@ export function goalStartsFrom(
     'goalType' | 'targetValue' | 'muscleUnit' | 'startWeightKg' | 'startBodyFat' | 'startMuscle'
   >,
   entries: Pick<WeightEntry, 'measuredAt' | Metric>[],
+  startAt: Date,
 ): GoalStartChange[] | null {
   const changes: GoalStartChange[] = [];
   for (const metric of ['weightKg', 'bodyFat', 'muscle'] as const) {
-    const after = currentMetric(entries, metric, metric === 'muscle' ? muscleUnitOf(goal) : 'percent');
+    const after = startMetric(entries, metric, metric === 'muscle' ? muscleUnitOf(goal) : 'percent', startAt);
     const field = START_FIELD[metric];
     if (after !== null) changes.push({ metric, field, before: goal[field], after });
   }

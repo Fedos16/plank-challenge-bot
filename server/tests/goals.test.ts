@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ParticipantGoal, WeightEntry } from '@prisma/client';
-import { currentMetric, goalProgress, goalStartsFrom, progressFor } from '../src/services/fitness/goals';
+import { currentMetric, goalProgress, goalStartsFrom, progressFor, startMetric } from '../src/services/fitness/goals';
 import { muscleKgOf, musclePctOf } from '../src/services/weight';
 
 test('goalProgress: похудение — движение вниз', () => {
@@ -139,28 +139,49 @@ const startGoal = {
   startMuscle: null,
 };
 
-test('goalStartsFrom: старт — среднее по замерам пробной недели, как «текущее значение»', () => {
+/** Старт 28.09 в полночь по Москве: пробная неделя — 21–27.09. */
+const START_AT = at('2026-09-27T21:00:00Z');
+
+test('goalStartsFrom: старт — среднее по всем замерам пробной недели, а не по трём последним', () => {
+  // Рома из «Storm Fat fight 3.0»: худел всю неделю, по трём последним вышло бы 70.9 и 20.3
   const entries = [
-    entry('2026-09-21T06:00:00Z', 83.5, 24.7),
-    entry('2026-09-23T06:00:00Z', 82.4, 24.5),
-    entry('2026-09-24T06:00:00Z', 82.0, 24.3),
-    entry('2026-09-25T06:00:00Z', 82.2, 24.4),
+    entry('2026-09-14T07:00:00Z', 73.0, 21.5), // до пробной недели — не в счёт
+    entry('2026-09-21T07:00:00Z', 72.2, 21.0),
+    entry('2026-09-22T07:00:00Z', 72.0, 20.8),
+    entry('2026-09-23T20:44:00Z', 71.6, 20.6),
+    entry('2026-09-24T05:38:00Z', 70.4, 20.0),
+    entry('2026-09-25T08:20:00Z', 70.6, 20.4),
+    entry('2026-09-28T06:00:00Z', 69.9, 19.9), // уже после старта — не в счёт
   ];
-  assert.deepEqual(goalStartsFrom(startGoal, entries), [
-    { metric: 'weightKg', field: 'startWeightKg', before: 83.5, after: 82.2 },
-    { metric: 'bodyFat', field: 'startBodyFat', before: 24.7, after: 24.4 },
+  assert.deepEqual(goalStartsFrom(startGoal, entries, START_AT), [
+    { metric: 'weightKg', field: 'startWeightKg', before: 83.5, after: 71.4 },
+    { metric: 'bodyFat', field: 'startBodyFat', before: 24.7, after: 20.6 },
   ]);
 });
 
+test('startMetric: жир усредняется только по замерам, где он есть', () => {
+  // Павел: в один день весы прислали вес без жира
+  const entries = [entry('2026-09-22T08:08:00Z', 112), entry('2026-09-23T08:26:00Z', 111.6, 32.7)];
+  assert.equal(startMetric(entries, 'weightKg', 'percent', START_AT), 111.8);
+  assert.equal(startMetric(entries, 'bodyFat', 'percent', START_AT), 32.7);
+});
+
+test('startMetric: без замеров за пробную неделю — последнее известное, как у текущего', () => {
+  const entries = [entry('2026-09-10T06:00:00Z', 80, 25), entry('2026-09-12T06:00:00Z', 79, 24)];
+  assert.equal(startMetric(entries, 'weightKg', 'percent', START_AT), 79.5);
+  assert.equal(startMetric([], 'weightKg', 'percent', START_AT), null);
+});
+
 test('goalStartsFrom: без замеров старт не трогаем', () => {
-  assert.deepEqual(goalStartsFrom(startGoal, []), []);
+  assert.deepEqual(goalStartsFrom(startGoal, [], START_AT), []);
 });
 
 test('goalStartsFrom: цель, достигнутая от нового старта, не пересчитывается', () => {
   // сушился до 20%, а за пробную неделю весы показали 19.8 — прогресс сломался бы
   const entries = [entry('2026-09-25T06:00:00Z', 80, 19.8)];
-  assert.equal(goalStartsFrom(startGoal, entries), null);
+  assert.equal(goalStartsFrom(startGoal, entries, START_AT), null);
   // у набора мышц направление обратное
   const gain = { ...startGoal, goalType: 'gain_muscle', targetValue: 40, startMuscle: 38 };
-  assert.equal(goalStartsFrom(gain, [{ measuredAt: at('2026-09-25T06:00:00Z'), weightKg: 80, bodyFat: null, muscle: 41 }]), null);
+  const muscle = [{ measuredAt: at('2026-09-25T06:00:00Z'), weightKg: 80, bodyFat: null, muscle: 41 }];
+  assert.equal(goalStartsFrom(gain, muscle, START_AT), null);
 });

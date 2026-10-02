@@ -45,7 +45,8 @@ export function startDayError(day: DayStr, today: DayStr): StartError | null {
  * Кнопка «Старт» в админке: челлендж начинается в выбранный день (по умолчанию сегодня), всё
  * до него — пробный период. Его тренировки остаются в журнале без зачёта, итогов и потери
  * жизней за него не будет. Дата окончания не меняется — пересчитывается длительность.
- * Стартовые замеры целей — среднее по взвешиваниям до дня старта (см. goalStartsFrom).
+ * Стартовые замеры целей — среднее по взвешиваниям пробной недели, семи дней перед стартом
+ * (см. startMetric).
  * День в прошлом нужен, если нажать вовремя забыли: взвешивания после него в старт не идут.
  *
  * Нельзя, если уже есть итоги недель: сдвиг старта переписал бы их задним числом.
@@ -85,7 +86,7 @@ export async function startFitnessChallenge(ch: Challenge, day?: DayStr): Promis
     const entries = await prisma.weightEntry.findMany({
       where: { userId: p.userId, measuredAt: { lt: cutoff } },
     });
-    const changes = goalStartsFrom(goal, entries);
+    const changes = goalStartsFrom(goal, entries, cutoff);
     if (!changes) {
       participants.push({ name, status: 'target_reached', changes: [] });
       continue;
