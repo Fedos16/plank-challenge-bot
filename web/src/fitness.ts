@@ -4,7 +4,6 @@ import type {
   FitnessOverview,
   GoalMetric,
   GoalType,
-  MeasurementKind,
   MuscleUnit,
   Verdict,
   WeekHistory,
@@ -52,17 +51,6 @@ export const GOAL_METRIC: Record<GoalType, GoalMetric | null> = {
   gain_muscle: 'muscle',
   custom: null,
 };
-
-export const MEASUREMENT_LABEL: Record<MeasurementKind, string> = {
-  waist: 'Талия',
-  chest: 'Грудь',
-  hips: 'Бёдра',
-  thigh: 'Бедро',
-  biceps: 'Бицепс',
-  neck: 'Шея',
-};
-
-export const MEASUREMENT_KINDS = Object.keys(MEASUREMENT_LABEL) as MeasurementKind[];
 
 /** Виды активности для ручного ввода; ключи совпадают с серверным списком SPORTS. */
 export const SPORT_LABEL: Record<string, string> = {

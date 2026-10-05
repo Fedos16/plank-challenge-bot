@@ -319,7 +319,6 @@ export type GoalMetric = 'weightKg' | 'bodyFat' | 'muscle';
 export type Sex = 'male' | 'female';
 /** В чём считать мышцы: масса (Zepp, Mi Fitness) или доля (так присылают весы). */
 export type MuscleUnit = 'kg' | 'percent';
-export type MeasurementKind = 'waist' | 'chest' | 'hips' | 'thigh' | 'biceps' | 'neck';
 
 export interface BodyProfile {
   heightCm: number | null;
@@ -555,13 +554,6 @@ export interface GoalInput {
   muscleUnit: MuscleUnit;
   dailyKcalTarget: number | null;
   note: string | null;
-}
-
-export interface Measurement {
-  id: number;
-  day: string;
-  kind: MeasurementKind;
-  value: number;
 }
 
 export interface ManualWeightInput {

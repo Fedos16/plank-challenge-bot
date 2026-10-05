@@ -27,8 +27,6 @@ import type {
   LeaderboardRow,
   LedgerEntry,
   ManualWeightInput,
-  Measurement,
-  MeasurementKind,
   MyChallengesResponse,
   NotificationSettings,
   Participant,
@@ -147,11 +145,6 @@ export const api = {
     request<FitnessOverview>(`/challenges/${id}/goal`, { method: 'PUT', body: JSON.stringify(data) }),
   saveBodyProfile: (data: Partial<BodyProfile>) =>
     request<BodyProfile>('/body-profile', { method: 'PUT', body: JSON.stringify(data) }),
-  getMeasurements: () => request<{ rows: Measurement[] }>('/measurements'),
-  saveMeasurement: (data: { kind: MeasurementKind; value: number; day?: string }) =>
-    request<{ rows: Measurement[] }>('/measurements', { method: 'PUT', body: JSON.stringify(data) }),
-  deleteMeasurement: (id: number) =>
-    request<{ rows: Measurement[] }>(`/measurements/${id}`, { method: 'DELETE' }),
 
   // --- фитнес-челлендж: тренировки, рейтинг ---
   getFitnessWorkouts: (id: number) =>

@@ -1,26 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api } from '../api';
-import type {
-  FitnessOverview,
-  Measurement,
-  MeasurementKind,
-  MuscleUnit,
-  WeightOverview,
-  WeightPoint,
-} from '../types';
+import type { FitnessOverview, GoalMetric, MuscleUnit, WeightOverview, WeightPoint } from '../types';
 import { confirmAction, haptic } from '../telegram';
-import { formatDayHumanRu, formatTimeRu, todayInZone } from '../helpers';
-import {
-  MEASUREMENT_KINDS,
-  MEASUREMENT_LABEL,
-  UNIT_LABEL,
-  convertMuscle,
-  errorText,
-  formatNum,
-  muscleUnitOf,
-  numOrNull,
-} from '../fitness';
+import { daysBetweenISO, formatDateRu, formatDayHumanRu, formatTimeRu, todayInZone } from '../helpers';
+import { UNIT_LABEL, convertMuscle, errorText, formatNum, muscleUnitOf, numOrNull } from '../fitness';
 import LineChart from './LineChart.vue';
 import UnitToggle from './UnitToggle.vue';
 
@@ -29,7 +13,6 @@ const props = defineProps<{ overview: FitnessOverview }>();
 const emit = defineEmits<{ (e: 'changed'): void }>();
 
 const weight = ref<WeightOverview | null>(null);
-const measurements = ref<Measurement[]>([]);
 const loading = ref(true);
 const busy = ref(false);
 const error = ref<string | null>(null);
@@ -37,7 +20,6 @@ const error = ref<string | null>(null);
 /** Сегодня по часам телефона: день взвешивания выбирают по нему, будущее недоступно. */
 const localToday = () => new Date().toLocaleDateString('sv-SE');
 const weightForm = reactive({ weightKg: '', bodyFat: '', muscle: '', day: localToday() });
-const measureForm = reactive({ kind: 'waist' as MeasurementKind, value: '' });
 
 /** В чём вводим и показываем мышцы. В базе всегда доля — килограммы сервер выводит из веса. */
 const muscleUnit = ref<MuscleUnit>(muscleUnitOf(props.overview));
@@ -46,9 +28,7 @@ const muscleUnitLabel = computed(() => UNIT_LABEL[muscleUnit.value]);
 async function load() {
   loading.value = true;
   try {
-    const [w, m] = await Promise.all([api.getWeight(), api.getMeasurements()]);
-    weight.value = w;
-    measurements.value = m.rows;
+    weight.value = await api.getWeight();
   } catch (e) {
     error.value = errorText(e);
   } finally {
@@ -63,67 +43,146 @@ const muscleTarget = computed(() =>
   goalMetric.value === 'muscle' && props.overview.progress?.unit === muscleUnit.value ? target.value : null,
 );
 
-function series(pick: (p: WeightPoint) => number | null) {
+type Tone = 'good' | 'bad' | '';
+
+interface Point {
+  day: string;
+  value: number;
+}
+
+function series(pick: (p: WeightPoint) => number | null): Point[] {
   return (weight.value?.history ?? [])
     .map((p) => ({ day: p.day, value: pick(p) }))
-    .filter((p): p is { day: string; value: number } => p.value !== null);
+    .filter((p): p is Point => p.value !== null);
 }
-const weightSeries = computed(() => series((p) => p.weightKg));
-const fatSeries = computed(() => series((p) => p.bodyFat));
-const muscleSeries = computed(() => series((p) => (muscleUnit.value === 'kg' ? p.muscleKg : p.muscle)));
 
 /** История для списка — сверху свежее. */
 const recent = computed<WeightPoint[]>(() => [...(weight.value?.history ?? [])].reverse().slice(0, 15));
 
 const today = computed(() => todayInZone(props.overview.challenge.timezone));
 
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
 /**
- * Куда должен идти вес по цели: −1 — вниз, +1 — вверх, 0 — цель не про вес. Нужно, чтобы
- * красить сдвиг между взвешиваниями: минус при похудении зелёный, при наборе — красный.
+ * Куда показателю хорошо двигаться: −1 — вниз, +1 — вверх, 0 — не красим. У показателя цели —
+ * к цели: минус при похудении зелёный, при наборе — красный. Без цели жиру хорошо вниз, мышцам —
+ * вверх, а вес не красим: смотря что человек делает.
  */
-const weightDirection = computed(() => {
+function directionOf(metric: GoalMetric): number {
   const p = props.overview.progress;
-  if (!p || p.metric !== 'weightKg' || p.start === null || p.target === null) return 0;
-  return Math.sign(p.target - p.start);
-});
+  if (p?.metric === metric && p.start !== null && p.target !== null) return Math.sign(p.target - p.start);
+  return metric === 'bodyFat' ? -1 : metric === 'muscle' ? 1 : 0;
+}
+
+function toneOf(delta: number | null, direction: number): Tone {
+  if (delta === null || delta === 0 || direction === 0) return '';
+  return Math.sign(delta) === direction ? 'good' : 'bad';
+}
 
 /** Сдвиг веса от предыдущего взвешивания в списке (список — от новых к старым). */
 function weightDelta(i: number): number | null {
   const cur = recent.value[i];
   const prev = recent.value[i + 1];
   if (!cur || !prev) return null;
-  return Math.round((cur.weightKg - prev.weightKg) * 10) / 10;
+  return round1(cur.weightKg - prev.weightKg);
 }
 
-function deltaTone(delta: number | null): 'good' | 'bad' | '' {
-  if (delta === null || delta === 0 || weightDirection.value === 0) return '';
-  return Math.sign(delta) === weightDirection.value ? 'good' : 'bad';
+function deltaTone(delta: number | null): Tone {
+  return toneOf(delta, directionOf('weightKg'));
 }
-
-interface MeasureRow {
-  kind: MeasurementKind;
-  last: Measurement;
-  delta: number | null;
-}
-
-/** По каждому виду замера: последнее значение и сдвиг от самого первого. */
-const measureSummary = computed<MeasureRow[]>(() => {
-  const result: MeasureRow[] = [];
-  for (const kind of MEASUREMENT_KINDS) {
-    const rows = measurements.value.filter((m) => m.kind === kind); // от новых к старым
-    const last = rows[0];
-    const first = rows[rows.length - 1];
-    if (!last || !first) continue;
-    const delta = rows.length > 1 ? Math.round((last.value - first.value) * 10) / 10 : null;
-    result.push({ kind, last, delta });
-  }
-  return result;
-});
 
 function formatDelta(n: number): string {
   if (n === 0) return '±0';
   return (n > 0 ? '+' : '−') + formatNum(Math.abs(n));
 }
+
+/** Последняя точка не позже чем за `days` дней до `day` — как дельты веса на сервере. */
+function pointBefore(points: Point[], day: string, days: number): Point | null {
+  for (let i = points.length - 1; i >= 0; i--) {
+    if (daysBetweenISO(points[i]!.day, day) >= days) return points[i]!;
+  }
+  return null;
+}
+
+interface Cell {
+  value: string;
+  label: string;
+  tone: Tone;
+}
+
+/**
+ * Цифры к графику: сдвиг последнего замера за неделю, за месяц и за весь график, у показателя
+ * цели — ещё сколько до неё. Взвешиваются не каждый день, поэтому период подписан по факту
+ * («за 9 дн.»), а совпавшая точка отсчёта второй раз не показывается.
+ */
+function cellsOf(points: Point[], direction: number, target: number | null): Cell[] {
+  const last = points[points.length - 1];
+  const first = points[0];
+  if (!last || !first) return [];
+  const refs: { ref: Point; label: string }[] = [];
+  for (const days of [7, 30]) {
+    const ref = pointBefore(points, last.day, days);
+    if (ref && !refs.some((r) => r.ref === ref)) {
+      refs.push({ ref, label: `за ${daysBetweenISO(ref.day, last.day)} дн.` });
+    }
+  }
+  if (first !== last && !refs.some((r) => r.ref === first)) {
+    refs.push({ ref: first, label: `с ${formatDateRu(first.day).slice(0, 5)}` });
+  }
+  const cells = refs.map(({ ref, label }): Cell => {
+    const delta = round1(last.value - ref.value);
+    return { value: formatDelta(delta), label, tone: toneOf(delta, direction) };
+  });
+  if (target !== null && direction !== 0) {
+    const left = Math.max(0, round1((target - last.value) * direction));
+    cells.push(left === 0 ? { value: '✓', label: 'цель взята', tone: 'good' } : { value: formatNum(left), label: 'до цели', tone: '' });
+  }
+  return cells;
+}
+
+interface MetricCard {
+  metric: GoalMetric;
+  title: string;
+  unit: string;
+  points: Point[];
+  target: number | null;
+  current: number;
+  cells: Cell[];
+}
+
+/** Вес, жир и мышцы: последнее значение, сдвиги и график. Жир и мышцы — со второго замера. */
+const metricCards = computed<MetricCard[]>(() => {
+  const defs: { metric: GoalMetric; title: string; unit: string; points: Point[]; target: number | null }[] = [
+    {
+      metric: 'weightKg',
+      title: 'Вес',
+      unit: 'кг',
+      points: series((p) => p.weightKg),
+      target: goalMetric.value === 'weightKg' ? target.value : null,
+    },
+    {
+      metric: 'bodyFat',
+      title: 'Жир',
+      unit: '%',
+      points: series((p) => p.bodyFat),
+      target: goalMetric.value === 'bodyFat' ? target.value : null,
+    },
+    {
+      metric: 'muscle',
+      title: 'Мышцы',
+      unit: muscleUnitLabel.value,
+      points: series((p) => (muscleUnit.value === 'kg' ? p.muscleKg : p.muscle)),
+      target: muscleTarget.value,
+    },
+  ];
+  return defs
+    .filter((d) => d.points.length > (d.metric === 'weightKg' ? 0 : 1))
+    .map((d) => ({
+      ...d,
+      current: d.points[d.points.length - 1]!.value,
+      cells: cellsOf(d.points, directionOf(d.metric), d.target),
+    }));
+});
 
 async function run(action: () => Promise<void>) {
   if (busy.value) return;
@@ -218,25 +277,6 @@ async function removeWeight(id: number) {
   });
 }
 
-function addMeasurement() {
-  const value = numOrNull(measureForm.value);
-  if (value === null) {
-    error.value = 'Введите значение в сантиметрах';
-    return;
-  }
-  void run(async () => {
-    measurements.value = (await api.saveMeasurement({ kind: measureForm.kind, value })).rows;
-    measureForm.value = '';
-  });
-}
-
-async function removeMeasurement(id: number) {
-  if (!(await confirmAction('Удалить этот замер?'))) return;
-  void run(async () => {
-    measurements.value = (await api.deleteMeasurement(id)).rows;
-  });
-}
-
 onMounted(load);
 </script>
 
@@ -276,42 +316,19 @@ onMounted(load);
 
     <div v-if="error" class="error-text" style="margin: 0 4px 10px">{{ error }}</div>
 
-    <!-- Динамика -->
-    <div v-if="weightSeries.length" class="card">
-      <h3>Вес</h3>
-      <LineChart :points="weightSeries" unit="кг" :target="goalMetric === 'weightKg' ? target : null" />
-    </div>
-    <div v-if="fatSeries.length > 1" class="card">
-      <h3>Жир</h3>
-      <LineChart :points="fatSeries" unit="%" :target="goalMetric === 'bodyFat' ? target : null" />
-    </div>
-    <div v-if="muscleSeries.length > 1" class="card">
-      <h3>Мышцы</h3>
-      <LineChart :points="muscleSeries" :unit="muscleUnitLabel" :target="muscleTarget" />
-    </div>
-
-    <!-- Обхваты -->
-    <div class="card">
-      <h3>📏 Обхваты</h3>
-      <div v-for="m in measureSummary" :key="m.kind" class="row">
-        <div class="name">{{ MEASUREMENT_LABEL[m.kind] }}</div>
-        <div class="meta">{{ formatDayHumanRu(m.last.day, today) }}</div>
-        <div v-if="m.delta !== null" class="meta">{{ formatDelta(m.delta) }}</div>
-        <div class="fire">{{ formatNum(m.last.value) }} см</div>
-        <button class="row-x" :disabled="busy" @click="removeMeasurement(m.last.id)">✕</button>
+    <!-- Динамика: последнее значение, сдвиги цифрами и график -->
+    <div v-for="m in metricCards" :key="m.metric" class="card">
+      <div class="metric-head">
+        <h3>{{ m.title }}</h3>
+        <div class="metric-now">{{ formatNum(m.current) }}<span class="metric-unit">{{ m.unit }}</span></div>
       </div>
-      <div v-if="!measureSummary.length" class="muted" style="margin-bottom: 10px">
-        Сантиметровая лента честнее весов: мышцы тяжелее жира, и вес может стоять, пока талия уходит.
+      <div v-if="m.cells.length" class="shifts">
+        <div v-for="c in m.cells" :key="c.label" class="shift">
+          <div class="v" :class="c.tone">{{ c.value }}</div>
+          <div class="k">{{ c.label }}</div>
+        </div>
       </div>
-
-      <div class="measure-form">
-        <select v-model="measureForm.kind">
-          <option v-for="k in MEASUREMENT_KINDS" :key="k" :value="k">{{ MEASUREMENT_LABEL[k] }}</option>
-        </select>
-        <input v-model="measureForm.value" inputmode="decimal" placeholder="см" @keyup.enter="addMeasurement" />
-        <button class="btn small" :disabled="busy" @click="addMeasurement">Записать</button>
-      </div>
-      <div class="muted" style="margin-top: 8px">Один замер вида в день: повторный ввод исправляет значение.</div>
+      <LineChart :points="m.points" :unit="m.unit" :target="m.target" />
     </div>
 
     <!-- История взвешиваний -->
@@ -377,12 +394,58 @@ onMounted(load);
   grid-template-columns: 1.3fr 1fr 1fr;
   gap: 8px;
 }
-.measure-form {
+.metric-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.metric-head h3 {
+  margin: 0;
+}
+.metric-now {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.metric-unit {
+  margin-left: 4px;
+  font-size: 13px;
+  color: var(--hint);
+}
+/* сдвиги в ряд через тонкие линейки: число сверху, период подписью */
+.shifts {
   display: grid;
-  grid-template-columns: 1.4fr 1fr auto;
-  gap: 8px;
-  margin-top: 12px;
-  align-items: center;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  margin-bottom: 8px;
+}
+.shift {
+  padding: 0 8px;
+  border-left: 1px solid var(--rule);
+}
+.shift:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+.shift .v {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.shift .v.good {
+  color: var(--green);
+}
+.shift .v.bad {
+  color: var(--red);
+}
+.shift .k {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--hint);
 }
 .comp {
   border: none;
