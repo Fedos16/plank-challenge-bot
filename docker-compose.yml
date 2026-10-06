@@ -30,8 +30,16 @@ services:
     ports:
       - '80:80'
       - '443:443'
+      # Веб-морда tennis (/opt/tennis, отдельный compose-проект): Caddy снимает TLS тем же
+      # сертификатом, а логин и пароль проверяет nginx тенниса.
+      - '8443:8443'
     environment:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN}
+    networks:
+      default:
+        # Маршрут по умолчанию остаётся в сети с IPv6, как до подключения edge.
+        gw_priority: 1
+      edge: {}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
@@ -50,6 +58,10 @@ networks:
     ipam:
       config:
         - subnet: fd00:c0de:1::/64
+  # Общая сеть с проектом tennis: через неё Caddy достаёт до его nginx (tennis-nginx).
+  # Создаётся здесь, чтобы бот не зависел от того, запущен ли tennis.
+  edge:
+    name: edge
 
 volumes:
   postgres_data:
