@@ -4,3 +4,9 @@
 	encode gzip
 	reverse_proxy app:3000
 }
+
+# Веб-морда tennis (отдельный проект в /opt/tennis). Пока он не запущен, здесь будет 502.
+{$PUBLIC_DOMAIN}:8443 {
+	encode gzip
+	reverse_proxy tennis-nginx:80
+}
