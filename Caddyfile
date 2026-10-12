@@ -10,3 +10,9 @@
 	encode gzip
 	reverse_proxy tennis-nginx:80
 }
+
+# Mini App семейных финансов (отдельный проект в /opt/family-finance). Пока он не запущен, здесь будет 502.
+{$PUBLIC_DOMAIN}:8444 {
+	encode gzip
+	reverse_proxy family-finance-web:3000
+}
