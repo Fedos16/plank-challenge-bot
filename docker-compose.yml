@@ -33,6 +33,9 @@ services:
       # Веб-морда tennis (/opt/tennis, отдельный compose-проект): Caddy снимает TLS тем же
       # сертификатом, а логин и пароль проверяет nginx тенниса.
       - '8443:8443'
+      # Mini App семейных финансов (/opt/family-finance): вход проверяет само приложение
+      # по подписи Telegram.
+      - '8444:8444'
     environment:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN}
     networks:
@@ -58,8 +61,8 @@ networks:
     ipam:
       config:
         - subnet: fd00:c0de:1::/64
-  # Общая сеть с проектом tennis: через неё Caddy достаёт до его nginx (tennis-nginx).
-  # Создаётся здесь, чтобы бот не зависел от того, запущен ли tennis.
+  # Общая сеть с проектами tennis и family-finance: через неё Caddy достаёт до их веб-морд
+  # (tennis-nginx, family-finance-web). Создаётся здесь, чтобы бот не зависел от того, запущены ли они.
   edge:
     name: edge
 
